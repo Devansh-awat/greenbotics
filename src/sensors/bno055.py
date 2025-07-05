@@ -3,7 +3,7 @@ import board
 import adafruit_bno055
 import time
 import numpy as np
-import config
+from src.obstacle_challenge import config
 
 # Module-level hardware object
 sensor = None

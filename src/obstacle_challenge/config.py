@@ -67,3 +67,13 @@ SERVO_PWM_PERIOD_S = 1.0 / SERVO_PWM_FREQ
 BOX_COLOR_RED = (0, 0, 255)
 BOX_COLOR_GREEN = (0, 255, 0)
 BOX_COLOR_ROI = (255, 0, 255)
+
+# Time-of-Flight (ToF) Sensor Configuration ---
+TOF_ENABLED = True
+TOF_CHANNELS_TO_USE = range(1, 6) # Channels 1, 2, 3, 4, 5 on the mux
+TOF_FORWARD_SENSOR_CHANNEL = 3     # The channel for the sensor facing forward
+TOF_OBSTACLE_THRESHOLD_MM = 250   # Distance in mm to trigger dead-end logic
+
+# Dead-End Navigation Logic ---
+DEAD_END_TURN_DIRECTION = "RIGHT"  # "RIGHT" or "LEFT"
+DEAD_END_TURN_ANGLE = 90.0

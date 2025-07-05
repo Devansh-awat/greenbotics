@@ -3,7 +3,7 @@ from picamera2 import Picamera2
 import cv2
 import numpy as np
 import time
-import config
+from src.obstacle_challenge import config
 
 # Module-level hardware object
 picam2 = None

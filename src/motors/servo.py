@@ -1,7 +1,7 @@
 # servo.py
 from rpi_hardware_pwm import HardwarePWM
 import time
-import config
+from src.obstacle_challenge import config
 
 # Module-level hardware object
 servo_pwm = None
