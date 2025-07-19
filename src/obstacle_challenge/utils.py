@@ -3,8 +3,10 @@ import time
 import cv2
 import threading
 
+
 class FPSCounter:
     """A simple class to measure and display frames per second."""
+
     def __init__(self):
         self._start_time = None
         self._num_frames = 0
@@ -33,28 +35,30 @@ class FPSCounter:
         Optionally changes color if FPS drops below a threshold.
         """
         self.get_fps()
-        
+
         text = f"FPS: {self.fps:.2f}"
-        text_color = (0, 255, 0) # Green for good
-        
+        text_color = (0, 255, 0)  # Green for good
+
         if alert_threshold and self.fps < alert_threshold:
-            text_color = (0, 0, 255) # Red for alert
-            
+            text_color = (0, 0, 255)  # Red for alert
+
         cv2.putText(
             frame,
             text,
-            (10, 30), # Position on the frame
+            (10, 30),  # Position on the frame
             cv2.FONT_HERSHEY_SIMPLEX,
-            0.8, # Font scale
+            0.8,  # Font scale
             text_color,
-            2 # Thickness
+            2,  # Thickness
         )
+
 
 class AsyncSensorReader:
     """
     Runs a sensor reading function in a separate thread to avoid blocking the main loop.
     This is ideal for I/O-bound tasks like reading from a ToF sensor.
     """
+
     def __init__(self, reading_func, *args):
         """
         :param reading_func: The function to call to get a sensor reading (e.g., vl53l0x.get_distance)
@@ -73,11 +77,11 @@ class AsyncSensorReader:
         while self._running:
             # Call the provided sensor function
             value = self._reading_func(*self._args)
-            
+
             # Use the lock to safely update the shared value
             with self._lock:
                 self.latest_value = value
-            
+
             # Sleep for a tiny amount to prevent this thread from hogging the CPU
             time.sleep(0.01)
 
