@@ -47,12 +47,26 @@ def forward(speed):
         lgpio.gpio_write(gpio_handle, config.AIN2_PIN, 0)
         _set_speed(speed)
 
+def reverse(speed):
+    """Drives the motor in reverse at a given speed."""
+    if gpio_handle:
+        lgpio.gpio_write(gpio_handle, config.STBY_PIN, 1)
+        lgpio.gpio_write(gpio_handle, config.AIN1_PIN, 0)  # This is the change
+        lgpio.gpio_write(gpio_handle, config.AIN2_PIN, 1)  # This is the change
+        _set_speed(speed)
 
 def standby():
     """Puts the motor driver in standby mode (low power, disengaged)."""
     if gpio_handle:
         lgpio.gpio_write(gpio_handle, config.STBY_PIN, 0)
 
+def brake():
+    """Brakes the motor by shorting its terminals."""
+    if gpio_handle:
+        lgpio.gpio_write(gpio_handle, config.STBY_PIN, 1)
+        lgpio.gpio_write(gpio_handle, config.AIN1_PIN, 1)
+        lgpio.gpio_write(gpio_handle, config.AIN2_PIN, 1)
+        _set_speed(0) # Set speed to 0 when braking
 
 def cleanup():
     """Stops the motor and releases GPIO resources."""

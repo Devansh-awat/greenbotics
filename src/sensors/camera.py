@@ -8,6 +8,18 @@ from src.obstacle_challenge import config
 # Module-level hardware object
 picam2 = None
 
+# Global variables to store mouse coordinates
+current_mouse_x = -1
+current_mouse_y = -1
+
+
+def mouse_event_handler(event, x, y, flags, param):
+    """Callback function for mouse events to update mouse coordinates."""
+    global current_mouse_x, current_mouse_y
+    if event == cv2.EVENT_MOUSEMOVE:
+        current_mouse_x = x
+        current_mouse_y = y
+
 
 def initialize():
     """Initializes the Picamera2."""
@@ -36,6 +48,8 @@ def capture_frame():
     if picam2:
         frame = picam2.capture_array("main")
         frame = cv2.rotate(frame, cv2.ROTATE_180)
+        if frame.shape[2] == 4:
+            frame = cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR)
         return frame
     return None
 
@@ -74,35 +88,35 @@ def find_biggest_block(frame):
                 continue
 
             x, y, cw, ch = cv2.boundingRect(cnt)
-
-            # --- NEW: ROI OVERLAP CHECK LOGIC ---
-            # Ensure the block has a certain vertical presence within the ROI
-
-            # Find the intersection of the block's y-span and the ROI's y-span
             block_top = y
             block_bottom = y + ch
-
             overlap_top = max(block_top, roi_top_y)
             overlap_bottom = min(block_bottom, roi_bottom_y)
-
-            # Calculate the height of the overlapping region
             overlap_height = max(0, overlap_bottom - overlap_top)
-
-            # Calculate the percentage of the block's height that is inside the ROI
-            if ch > 0:  # Avoid division by zero
+            if ch > 0:
                 overlap_ratio = overlap_height / ch
             else:
                 overlap_ratio = 0
 
-            # Only consider the block valid if it meets the overlap requirement
             if overlap_ratio < config.MIN_BLOCK_ROI_OVERLAP:
                 continue
-            # --- END OF NEW LOGIC ---
-
             if not ch > cw:
-                continue  # Keep the check for tall objects
+                continue
 
-            valid_blocks.append({"contour": cnt, "color": color, "area": area})
+            # --- THIS IS THE FIX ---
+            # Calculate the center point (centroid) of the contour
+            M = cv2.moments(cnt)
+            center_x = int(M["m10"] / M["m00"]) if M["m00"] != 0 else 0
+            center_y = int(M["m01"] / M["m00"]) if M["m00"] != 0 else 0
+            
+            # Add the complete block data, including the new centroid, to the list
+            valid_blocks.append({
+                "contour": cnt, 
+                "color": color, 
+                "area": area,
+                "centroid": (center_x, center_y) # Add centroid tuple
+            })
+            # --- END OF FIX ---
 
     overlay_frame = frame.copy()
     cv2.line(overlay_frame, (0, roi_top_y), (w, roi_top_y), config.BOX_COLOR_ROI, 1)
@@ -110,8 +124,9 @@ def find_biggest_block(frame):
         overlay_frame, (0, roi_bottom_y), (w, roi_bottom_y), config.BOX_COLOR_ROI, 1
     )
 
+    # Note: Your main.py expects 3 return values, so we preserve that.
     if not valid_blocks:
-        return None, overlay_frame
+        return None, overlay_frame, hsv
 
     largest_block = max(valid_blocks, key=lambda b: b["area"])
     x, y, cw, ch = cv2.boundingRect(largest_block["contour"])
@@ -132,7 +147,8 @@ def find_biggest_block(frame):
         2,
     )
 
-    return largest_block, overlay_frame
+    # Return the dictionary for the largest block, which now contains the centroid
+    return largest_block, overlay_frame, hsv
 
 
 def cleanup():
@@ -143,27 +159,41 @@ def cleanup():
     cv2.destroyAllWindows()
 
 
-# Test routine
+# Test routine (Updated to show centroid)
 if __name__ == "__main__":
     print("--- Testing Camera and Vision Module ---")
     if not initialize():
         print("Camera test failed during initialization.")
     else:
+        cv2.namedWindow("Camera Test")
+        cv2.setMouseCallback("Camera Test", mouse_event_handler)
+
         try:
             print("Displaying camera feed with block detection. Press 'q' to exit.")
+            print("Move mouse over the frame to see pixel RGB and HSV values.")
             while True:
                 frame = capture_frame()
                 if frame is None:
-                    print("Failed to capture frame.")
-                    break
+                    print("Failed to capture frame."); break
 
-                block_data, overlay = find_biggest_block(frame)
+                block_data, overlay, hsv_frame = find_biggest_block(frame)
+
+                if (
+                    0 <= current_mouse_x < frame.shape[1]
+                    and 0 <= current_mouse_y < frame.shape[0]
+                ):
+                    b, g, r = frame[current_mouse_y, current_mouse_x]
+                    h, s, v = hsv_frame[current_mouse_y, current_mouse_x]
+                    text_rgb = f"RGB: ({r:3d}, {g:3d}, {b:3d})"
+                    text_hsv = f"HSV: ({h:3d}, {s:3d}, {v:3d})"
+                    cv2.putText(overlay, text_rgb, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+                    cv2.putText(overlay, text_hsv, (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
 
                 if block_data:
-                    print(
-                        f"\rFound: {block_data['color']} block, Area: {block_data['area']:.0f}  ",
-                        end="",
-                    )
+                    # UPDATED PRINT to include centroid for better debugging
+                    print(f"\rFound: {block_data['color']} block, Area: {block_data['area']:.0f}, Centroid: {block_data['centroid']}  ", end="")
+                else:
+                    print("\rNo block found.                                      ", end="")
 
                 cv2.imshow("Camera Test", overlay)
                 if cv2.waitKey(1) & 0xFF == ord("q"):

@@ -1,146 +1,210 @@
-from src.motors import motor, servo
+# src/open_challenge/main.py
+# New state-machine version for the Open Challenge.
+# Implements gyro-stabilized start and longer, safer debugging pauses.
 
-# We assume the sensor library is imported like this.
-# Please adjust if your import is different.
-from src.sensors import vl53l0x
 import time
+import sys
 
-# --- Constants ---
-TARGET_DISTANCE = 250
-KP = 0.3
-TURN_COOLDOWN = 9.0
-MAX_TURNS = 12
-FINAL_WALL_FOLLOW_DURATION = 2.0
+import numpy as np
+
+# Import our hardware and logic modules
+from src.motors import motor, servo
+from src.sensors import vl53l1x, bno055
+from src.open_challenge import config
+from src.obstacle_challenge.utils import SafetyMonitor
+
+
+# --- Helper Functions ---
+def get_angular_difference(angle1, angle2):
+    if angle1 is None or angle2 is None: return 360
+    diff = angle1 - angle2
+    while diff <= -180: diff += 360
+    while diff > 180: diff -= 360
+    return abs(diff)
+
+def steer_with_gyro(current_heading_goal, current_yaw, max_angle_left, max_angle_right):
+    """
+    Steers the robot using the gyro.
+    Applies separate maximum steering angles for left and right turns.
+    """
+    if config.GYRO_ENABLED and current_heading_goal is not None and current_yaw is not None:
+        error = current_heading_goal - current_yaw
+        while error <= -180: error += 360
+        while error > 180: error -= 360
+        
+        steer = config.GYRO_KP * error
+        
+        # NEW: Asymmetrical clamping
+        # A negative steer value is a left turn, a positive value is a right turn.
+        # This ensures the steer value is between -max_angle_left and +max_angle_right.
+        steer = max(-max_angle_left, min(steer, max_angle_right))
+        
+        servo.set_angle(steer)
+        return steer
+        
+    servo.set_angle(0.0)
+    return 0.0
 
 # --- Initialization ---
 try:
+    print("--- Initializing Systems for Open Challenge ---")
     servo.initialize()
     motor.initialize()
-    vl53l0x.initialize()
+    vl53l1x.initialize()
+    bno055.initialize()
+    safety_monitor = SafetyMonitor(bno055.sensor, 15)
+    print("--- Initialization Complete ---")
+
+    print("Waiting 1 second for sensors to stabilize...")
+    time.sleep(1.0)
+
 except Exception as e:
-    print(f"An error occurred during initialization: {e}")
+    print(f"FATAL: An error occurred during initialization: {e}")
+    motor.cleanup(); servo.cleanup(); vl53l1x.cleanup(); bno055.cleanup()
     exit()
 
-# --- State Variables ---
-servo.set_angle(0)
-turn_count = 0
+# --- Main Execution Logic ---
+# State Machine Variables
+current_state = "STARTING_RUN"
+turn_counter = 0
 locked_turn_direction = None
-last_turn_time = 0
-# New state to track if we are in the middle of the final turn
-final_turn_is_active = False
+target_heading = bno055.get_heading()
+final_run_end_time = 0
+frames_in_state = 0
+max_sensor_threshold=700
 
-print("Starting program. Defaulting to right-wall following.")
-motor.forward(100)
+print(f"\n[STATE CHANGE] ==> {current_state}")
+motor.forward(config.DRIVE_SPEED)
 
 try:
-    # Main loop runs indefinitely until we explicitly break out
     while True:
-        # Always read sensors
-        dis_left = vl53l0x.get_distance(0)
-        dis_right = vl53l0x.get_distance(2)
+        if safety_monitor and safety_monitor.is_triggered():
+            print("\nINFO: Safety Monitor triggered stop.")
+            break
+        current_yaw = bno055.get_heading()
+        dist_left = vl53l1x.get_distance(config.LEFT_SENSOR_CHANNEL)
+        dist_right = vl53l1x.get_distance(config.RIGHT_SENSOR_CHANNEL)
+        if dist_left is not None:
+            if dist_left > max_sensor_threshold:dist_left=None
+        if dist_right is not None:
+            if dist_right > max_sensor_threshold:dist_right=None
 
-        # --- NEW: LOGIC TO COMPLETE THE 12th TURN ---
-        if final_turn_is_active:
-            print("Finishing final turn...")
-            # Check which direction we're turning and wait for sensor to get a reading
-            if locked_turn_direction == "left" and dis_left is not None:
-                print("12th LEFT turn complete.")
-                final_turn_is_active = False  # Turn is done
-            elif locked_turn_direction == "right" and dis_right is not None:
-                print("12th RIGHT turn complete.")
-                final_turn_is_active = False  # Turn is done
+        if current_state == "STARTING_RUN":
+            steer_with_gyro(target_heading, current_yaw, config.GYRO_LEFT_MAX_STEER_ANGLE,config.GYRO_RIGHT_MAX_STEER_ANGLE)
+            print(f"\rDriving straight with gyro, waiting for a wall to be lost...", end="")
+            
+            wall_lost = False
+            if dist_left is None:
+                locked_turn_direction = 'left'
+                print(f"\nINFO: LEFT wall lost first. Locking to LEFT turns.")
+                wall_lost = True
 
-            # If the turn is now finished, start the final wall-follow
-            if not final_turn_is_active:
-                print(
-                    f"Beginning final {FINAL_WALL_FOLLOW_DURATION}-second wall-follow."
-                )
-                end_time = time.time() + FINAL_WALL_FOLLOW_DURATION
-                while time.time() < end_time:
-                    # Execute one last wall-following loop
-                    if locked_turn_direction == "left":
-                        current_dis = vl53l0x.get_distance(0)
-                        if current_dis is not None:
-                            angle = (TARGET_DISTANCE - current_dis) * KP
-                            servo.set_angle(angle)
-                    elif locked_turn_direction == "right":
-                        current_dis = vl53l0x.get_distance(2)
-                        if current_dis is not None:
-                            angle = (current_dis - TARGET_DISTANCE) * KP
-                            servo.set_angle(angle)
-                    time.sleep(0.1)
+            elif dist_right is None:
+                locked_turn_direction = 'right'
+                print(f"\nINFO: RIGHT wall lost first. Locking to RIGHT turns.")
+                wall_lost = True
 
-                # After the final wall-follow is done, break the main loop
-                print("Final sequence complete.")
-                break
+            if wall_lost:
+                
+                current_state = "PERFORMING_TURN"
+                max_sensor_threshold=300
+                print(f"[STATE CHANGE] ==> {current_state}")
+                frames_in_state = 0
 
-            # If we are still in the middle of the turn, just sleep and loop again
-            time.sleep(0.1)
-            continue  # Skip the rest of the logic and re-check turn completion
+        elif current_state == "WALL_FOLLOWING":
+            wall_lost = False
+            if locked_turn_direction == "left":
+                if dist_left is not None:
+                    # CORRECTED LOGIC FOR LEFT WALL
+                    error = dist_left - config.TARGET_DISTANCE
+                    steer_angle = -error * config.KP
+                    servo.set_angle(steer_angle)
+                    print(f"\rFollowing LEFT wall. Dist: {dist_left:6.1f}mm | Steer: {steer_angle:5.1f}", end="")
+                else:
+                    wall_lost = True
 
-        # ---- Standard Operating Logic (before 12th turn) ----
+            elif locked_turn_direction == "right":
+                if dist_right is not None:
+                    # CORRECTED LOGIC FOR RIGHT WALL
+                    error = dist_right - config.TARGET_DISTANCE
+                    steer_angle = error * config.KP # Note: a positive error requires a positive (right) turn
+                    servo.set_angle(steer_angle)
+                    print(f"\rFollowing RIGHT wall. Dist: {dist_right:6.1f}mm | Steer: {steer_angle:5.1f}", end="")
+                else:
+                    wall_lost = True
 
-        # Case 1: Locked onto the LEFT wall
-        if locked_turn_direction == "left":
-            if dis_left is None:
-                servo.set_angle(-25)
-                if (time.time() - last_turn_time) > TURN_COOLDOWN:
-                    turn_count += 1
-                    last_turn_time = time.time()
-                    print(f"Left turn counted! Total turns: {turn_count}/{MAX_TURNS}")
-                    if turn_count == MAX_TURNS:
-                        final_turn_is_active = True
-            else:  # Follow left wall
-                angle = (TARGET_DISTANCE - dis_left) * KP
-                servo.set_angle(angle)
+            if wall_lost:
+                print(f"\nINFO: {locked_turn_direction.upper()} wall lost. Preparing to turn.")
+                frames_in_state = 0
+                current_state = "PERFORMING_TURN"
 
-        # Case 2: Locked onto the RIGHT wall
-        elif locked_turn_direction == "right":
-            if dis_right is None:
-                servo.set_angle(45)
-                print("turning right")
-                if (time.time() - last_turn_time) > TURN_COOLDOWN:
-                    turn_count += 1
-                    last_turn_time = time.time()
-                    print(f"Right turn counted! Total turns: {turn_count}/{MAX_TURNS}")
-                    if turn_count == MAX_TURNS:
-                        final_turn_is_active = True
-            else:  # Follow right wall
-                angle = (dis_right - TARGET_DISTANCE) * KP
-                print(angle)
-                servo.set_angle(angle)
+        elif current_state == "PERFORMING_TURN":
+            frames_in_state += 1
+            if frames_in_state == 1:
+                if locked_turn_direction == "left":
+                    target_heading = (target_heading - 90 + 360) % 360
+                else: # right
+                    target_heading = (target_heading + 90 + 360) % 360
+                print(f"[STATE CHANGE] ==> {current_state} | New Target: {target_heading:.1f}°")
 
-        # Case 3: Initial state (no direction locked)
-        else:
-            if dis_left is None:
-                print("First turn detected: LEFT. Locking to left sensor.")
-                locked_turn_direction = "left"
-                servo.set_angle(-18)
-                turn_count += 1
-                last_turn_time = time.time()
-                print(f"Left turn counted! Total turns: {turn_count}/{MAX_TURNS}")
-                if turn_count == MAX_TURNS:
-                    final_turn_is_active = True
+            steer_with_gyro(target_heading, current_yaw, config.GYRO_LEFT_MAX_STEER_ANGLE,config.GYRO_RIGHT_MAX_STEER_ANGLE)
+            
+            if get_angular_difference(current_yaw, target_heading) < config.HEADING_LOCK_TOLERANCE:
+                turn_counter += 1
+                print(f"\nINFO: Turn {turn_counter}/{config.TOTAL_TURNS} complete.")
 
-            elif dis_right is None:
-                print("First turn detected: RIGHT. Locking to right sensor.")
-                locked_turn_direction = "right"
-                servo.set_angle(40)
-                turn_count += 1
-                last_turn_time = time.time()
-                print(f"Right turn counted! Total turns: {turn_count}/{MAX_TURNS}")
-                if turn_count == MAX_TURNS:
-                    final_turn_is_active = True
+                if turn_counter >= config.TOTAL_TURNS:
+                    current_state = "FINAL_WALL_FOLLOW"
+                    print(f"[STATE CHANGE] ==> {current_state}")
+                else:
+                    current_state = "SEARCHING_FOR_WALL"
+                    print(f"[STATE CHANGE] ==> {current_state}")
+                frames_in_state = 0
+
+        elif current_state == "SEARCHING_FOR_WALL":
+            steer_with_gyro(target_heading, current_yaw, config.GYRO_LEFT_MAX_STEER_ANGLE,config.GYRO_RIGHT_MAX_STEER_ANGLE)
+            print("\rSearching for next wall...", end="")
+
+            sensor_to_check = dist_left if locked_turn_direction == "left" else dist_right
+            if sensor_to_check is not None:
+                print("\nINFO: Next wall found.")
+
+                current_state = "WALL_FOLLOWING"
+                print(f"[STATE CHANGE] ==> {current_state}")
+
+        elif current_state == "FINAL_WALL_FOLLOW":
+            if frames_in_state == 0:
+                final_run_end_time = time.time() + config.FINAL_FOLLOW_DURATION_S
+                print(f"Beginning final {config.FINAL_FOLLOW_DURATION_S}s wall-follow.")
+            frames_in_state += 1
+
+            if time.time() >= final_run_end_time:
+                current_state = "MISSION_COMPLETE"
+                print("\nINFO: Final run timer complete.")
+                continue
+
+            if locked_turn_direction == "left":
+                error = dist_left - config.TARGET_DISTANCE if dist_left is not None else 0
+                servo.set_angle(-error * config.KP)
             else:
-                servo.set_angle(10)
+                error = dist_right - config.TARGET_DISTANCE if dist_right is not None else 0
+                servo.set_angle(error * config.KP)
+            
+            remaining_time = final_run_end_time - time.time()
+            print(f"\rFinal run... Time remaining: {remaining_time:.1f}s", end="")
+
+        elif current_state == "MISSION_COMPLETE":
+            print("\nMission complete. Stopping robot.")
+            break
 
         time.sleep(0.1)
 
 except KeyboardInterrupt:
-    print("\nStopping due to user interrupt (KeyboardInterrupt).")
+    print("\nSTOP: Program interrupted by user.")
 
 finally:
-    # --- Cleanup ---
-    print("Cleaning up motor and servo resources.")
+    print("Stopping robot and cleaning up resources.")
     motor.cleanup()
     servo.cleanup()
+    vl53l1x.cleanup()
+    bno055.cleanup()
