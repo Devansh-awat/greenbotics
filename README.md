@@ -1,3 +1,4 @@
+![Greenbotics 2025](other/readmephotos/logo.png)
 Engineering materials
 ====
 
