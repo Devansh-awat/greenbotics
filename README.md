@@ -14,8 +14,15 @@ Welcome to the Greenbotics 2025 repository! This repository contains everything 
 **Sheel**
 ![Sheel](other/readmephotos/Sheel.png)
 
+Sheel is a 15-year-old robotics enthusiast with an interest in programming. This is Sheel’s second year competing in WRO, having previously participated in Robomission Junior 2024. Alongside Devansh, Sheel qualified the international finals and placed 25th out of 114 teams.
+
+
 **Rakshith**
 ![Rakshith](other/readmephotos/Rakshith.png)
+
+**Our Robot**
+
+
 
 
 ## The Structure of This Repository
