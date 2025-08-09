@@ -1,6 +1,5 @@
 # src/sensors/vl53l1x.py
-# Driver for the VL53L1X. Returns last known value ONLY if the sensor is busy.
-# If the sensor reports an invalid reading (None), this function also returns None.
+# New robust version with a filter for anomalous zero readings.
 
 import time
 import board
@@ -13,7 +12,7 @@ from src.obstacle_challenge import config
 i2c = None
 mux = None
 sensors = {}
-# NEW: Dictionary to store the last known good distance for each channel
+# Dictionary to store the last known good distance for each channel
 last_known_distances = {}
 
 SENSOR_POSITIONS = {
@@ -43,10 +42,9 @@ def initialize():
         try:
             sensor_obj = adafruit_vl53l1x.VL53L1X(mux[i])
             sensor_obj.distance_mode = 1
-            sensor_obj.timing_budget = 50
+            sensor_obj.timing_budget = 33
             sensor_obj.start_ranging()
             sensors[i] = sensor_obj
-            # Initialize the last known distance for this channel to None
             last_known_distances[i] = None
             print(f"  - SUCCESS: VL53L1X found and initialized on channel {i}.")
         except (ValueError, OSError) as e:
@@ -59,8 +57,8 @@ def initialize():
 def get_distance(channel):
     """
     NON-BLOCKING read. Returns distance in mm.
-    If sensor.data_ready is False, returns last known value.
-    If sensor.data_ready is True but reading is invalid (None), this also returns None.
+    If sensor is busy, returns last known value.
+    If sensor reports an invalid reading (None or 0.0), this also returns None.
     """
     if channel in sensors and sensors[channel] is not None:
         sensor = sensors[channel]
@@ -70,9 +68,8 @@ def get_distance(channel):
                 distance_cm = sensor.distance
                 sensor.clear_interrupt()
                 
-                # If the new reading is invalid (out of range), it's a real 'None'.
-                # We must update our stored value and return None to signal wall loss.
-                if distance_cm is None:
+                # NEW: Treat a reading of 0.0 as an invalid reading, just like None.
+                if distance_cm is None or distance_cm == 0.0:
                     last_known_distances[channel] = None
                     return None
                 
@@ -82,29 +79,66 @@ def get_distance(channel):
                 return new_distance_mm
                 
             except OSError:
-                # On a communication error, it's safest to fall back to the old value.
                 return last_known_distances.get(channel)
         else:
             # If data is not ready, the sensor is busy. Return the last known value.
             return last_known_distances.get(channel)
             
-    return None # Sensor not initialized
+    return None
+
+def get_new_distance(channel, timeout=1.0):
+    """
+    BLOCKING read that waits for a fresh sensor value. For testing.
+    Returns distance in CENTIMETERS (cm), or None on error/timeout.
+    """
+    if channel in sensors and sensors[channel] is not None:
+        sensor = sensors[channel]
+        start_time = time.monotonic()
+        while not sensor.data_ready:
+            if time.monotonic() - start_time > timeout:
+                return None
+        try:
+            distance_cm = sensor.distance
+            sensor.clear_interrupt()
+            last_known_distances[channel] = distance_cm * 10.0 if distance_cm else None
+            return distance_cm
+        except OSError:
+            return None
+    return None
 
 def cleanup():
     """Stops ranging on all initialized sensors."""
     print("--- Cleaning up ToF Sensors (VL53L1X) ---")
     for sensor in sensors.values():
         if sensor is not None:
-            sensor.stop_ranging()
+            try:
+                sensor.stop_ranging()
+            except OSError:
+                print("Warning: I/O error during sensor cleanup. Ignoring.")
 
-# Test routine remains the same, as it doesn't use the non-blocking get_distance
 if __name__ == "__main__":
-    print("--- Testing VL53L1X Sensor Module ---")
+    print("--- Testing VL53L1X Sensor Module (Blocking Read for Test) ---")
     if not initialize():
         print("VL53L1X test failed during initialization.")
     else:
-        # This test part would need a blocking version of get_distance to work well
-        # We will leave it empty for now as it's not used by the main programs.
-        print("Test complete. Run main programs to see sensor in action.")
-        pass
-    cleanup()
+        try:
+            print("\nReading data from all configured sensors. Press Ctrl+C to stop.")
+            while True:
+                output_line = ""
+                sensor_order = [ch for ch in config.TOF_CHANNELS_TO_USE if sensors.get(ch)]
+
+                for i in sensor_order:
+                    dist_cm = get_new_distance(i)
+                    pos_name = SENSOR_POSITIONS.get(i, f"Ch{i}")
+
+                    if dist_cm is not None:
+                        output_line += f"{pos_name}: {dist_cm:6.1f} cm | "
+                    else:
+                        output_line += f"{pos_name}:   ----   | "
+                
+                print(f"\r{output_line}", end="")
+                time.sleep(0.05)
+        except KeyboardInterrupt:
+            print("\nTest interrupted by user.")
+        finally:
+            cleanup()
