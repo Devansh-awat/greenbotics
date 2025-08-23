@@ -10,7 +10,7 @@ Welcome to the Greenbotics 2025 repository! This repository contains everything 
 ## Devansh
 ![Devansh](other/readmephotos/Devansh.png)
 
-
+Bio Placeholder
 
 ## Sheel
 ![Sheel](other/readmephotos/Sheel.png)
