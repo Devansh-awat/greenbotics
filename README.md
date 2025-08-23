@@ -1,12 +1,11 @@
 ![Greenbotics 2025](other/readmephotos/logo.png)
 
 # This Incredible Repository
-====
 
 Welcome to the Greenbotics 2025 repository! This repository contains everything we've worked on over the past five months, including all our code and resources. You can also use this repository as a complete guide to understand and reconstruct the robot from the ground up.
 
 # Our Team
------
+
 
 ## Devansh
 ![Devansh](other/readmephotos/Devansh.png)
