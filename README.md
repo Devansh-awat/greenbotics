@@ -27,6 +27,8 @@ Hi! I'm Sheel. I'm 15, and doing my second WRO season. Last year, our team made 
 **Rakshith**  
 I'm Rakshith, a 9th grader passionate about robotics and aspiring to study engineering in Germany. I love building drones, experimenting with sensors. I also have 3 dogs, and two of them live with my grandparents in Hyderabad. 
 
+<br clear="left"/>
+
 ---
 
 <img src="other/readmephotos/PareshGambhava.jpg" width="150" align="left" style="margin-right:20px;"/>
