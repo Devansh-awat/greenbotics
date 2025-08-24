@@ -157,9 +157,6 @@ Potential Improvements:
 
 - Use a motor driver that can output higher currents, to allow for the use of higher performance motors
 
-- Integrate the motor driver to the main PCB to make it lighter.
-
-
 ## The Steering System
 
 For our steering mechanism, we needed a design that was precise. Like all other aspects of our robot’s design, our first choice was to use a LEGO based mechanism. To do that we could have used any encoder based motor (such as a spike prime small motor) as a makeshift servo motor. 
@@ -168,13 +165,37 @@ The problem was, that while any LEGO motor would have been both highly precise a
 
 Therefore, we decided to use an off the shelf servo motor. To integrate it into our LEGO based design, we 3D printed a custom servo mount which could be attached with lego screws to the front of the chassis directly behind the front wheel, while simultaneously hot gluing the servo horn to the axle of the front wheels.
 
+### The Servo Motor
+
+Our steering system is centered around the SG90 servo motor, which provides precise angular control, making it highly suitable for steering applications where accuracy is essential. Unlike standard DC motors, the SG90 has a built-in feedback mechanism that allows it to hold a commanded angle reliably without additional sensors. Despite its compact size, it delivers sufficient torque to handle the demands of turning the steering mechanism, ensuring stability.
+
+To connect the servo motor to our robot, we designed and 3D printed a custom Servo Mount. The diagram is shown below.
+
+---
+<table>
+  <tr>
+    <td width="50%" style="text-align: left;">
+      <img src="./other/readmephotos/servo.jpeg" alt="Servo Motor" width="100%">
+    </td>
+    <td width="50%" style="text-align: left; vertical-align: top;">
+      <h3>Specifications:</h3>
+      <li>Name: SG90</li>
+      <li>Operating voltage: 3.0V - 7.2V</li>
+      <li>Weight: 9 gm</li>
+    </td>
+  </tr>
+</table>
+
+A diagram of our servo mount is schown below: 
+
+<img src="other/readmephotos/ServoMount.jpeg" alt="Servo Mount" width="300"/>
+
 
 Potential Improvements:
 
 - 3D print the servo horn to directly connect to the LEGO Chassis. 
 - Try out different steering mechanisms such as the Ackermann system
 
-### The Servo Motor
 
 ## Our Chasis
 
@@ -208,40 +229,159 @@ Our robot uses the Bonka 11.1V 2200mAh 35C 3S Lithium Polymer (LiPo) battery. Th
   </tr>
 </table>
 
-
+---
 Potential Improvements
 
 - Implement a battery level indicator
 - Use a Lithium-Ion battery, as it 
-
 
     - Is safer
 
     - Has Charge Cycles
 
     - Allows for a smaller robot
-
-# Our Raspberry Pi
+---
+## Our Raspberry Pi
 
 The heart of our robot is the Raspberry Pi 5 microcomputer. It processes inputs from our distance sensors, runs image processing algorithms on the live camera feed and controls the motors to drive the robot to achieve its desired goals.
 
 We chose this particular model as it seamlessly integrates with a camera, making it easier to use than similar computers or microcontrollers such as an Arduino or ESP32. Additionally, we also wanted to take advantage of the Raspberry Pi 5 being far more powerful than other processors, allowing us to use newer and improved image processing technologies that deliver more accurate results but may require greater computing power.
 
-table>
+
+Potential Improvements
+
+- Use Arduinos and compatible cameras to make this robot much cheaper to design
+
+
+<table>
   <tr>
     <td width="50%" style="text-align: left;">
-      <img src="./other/readmephotos/LiPobattery.jpeg" alt="LiPo Battery" width="80%">
+      <img src="./other/readmephotos/raspberrypi.png" alt="Raspberry Pi 5" width="100%">
     </td>
     <td width="50%" style="text-align: left; vertical-align: top;">
       <h3>Specifications:</h3>
-      <li>Maximum Voltage: 12.6V </li>
-      <li>Nominal Voltage: 11.1V </li>
-      <li>Capacity: 2200mAh</li>
-      <li>Discharge Current: 35C</li>
-      <li>Weight: 175g</li>
+      <li>Name: Raspberry Pi 5 </li>
+      <li>RAM: 8GB</li>
+      <li>Pins: 40</li>
+      <li>Input Voltage: 5V</li>
     </td>
   </tr>
 </table>
+
+## Our Voltage Convertor
+
+Our battery provides 12V, but our Raspberry Pi requires 5V and our motor requires 9V. To supply these lower voltages safely, we used a XY-3606 step-down (buck) voltage converter.
+
+Potential Improvements
+
+- Use a linear convertor to reduce costs
+- Use a buck converter that is more efficient and provides more power at different voltages. This ensures that all components running at all voltages can be used
+
+
+<table>
+  <tr>
+    <td width="50%" style="text-align: left;">
+      <img src="./other/readmephotos/VoltageConvertor.jpg" alt="Voltage Convertor" width="100%">
+    </td>
+    <td width="50%" style="text-align: left; vertical-align: top;">
+      <h3>Specifications:</h3>
+      <li>Name: XY-3606 </li>
+      <li>Working voltage: DC 9V–36V</li>
+      <li>Output voltage: 5.2V</li>
+    </td>
+  </tr>
+</table>
+
+## Our Printed Circuit Board (PCB)
+
+In our first draft of the robot, there were a lot of criss-crossing wires between many different components. There was no clear arrangement for the wires, making the robot very messy and confusing to change. During practice runs, wires would routinely get loose, making it very difficult to troubleshoot errors. 
+
+To solve this, we designed a PCB which cleanly connected all of our components together, making the robot far cleaner and reliable.
+
+Here is a comparison showing our robot before and after the PCB
+
+Before:
+
+<img src="other/readmephotos/PrePCB.jpg" alt="Robot Before PCB" width="200"/>
+
+After
+
+<img src="other/readmephotos/PostPCB.jpeg" alt="Robot After PCB" width="200"/>
+
+An image and printable file for the PCB are provided below
+
+<img src="other/readmephotos/PCB.jpeg" alt="PCB" width="200"/>
+
+
+## Our Camera
+
+For image detection, we are using the Raspberry Pi Camera Module 3. Apart from its ease of integration with the raspberry pi reducing a major complexity for us, the Camera module 3 has autofocus, wide-angle and low-light performance, all of which are very useful in a competition setting.
+
+<table>
+  <tr>
+    <td width="50%" style="text-align: left;">
+      <img src="./other/readmephotos/RPI Camera 3.jpeg" alt="RPI Camera" width="100%">
+    </td>
+    <td width="50%" style="text-align: left; vertical-align: top;">
+      <h3>Specifications:</h3>
+      <li>Name: Camera Module 3 </li>
+      <li>Resolution: 11.9 megapixels</li>
+      <li>Horizontal/vertical: 4608 × 2592 pixels</li>
+      <li>Autofocus, Wide-angle and Low-light performance</li>
+    </td>
+  </tr>
+</table>
+
+Potential Improvements
+
+- Use the Raspberry Pi AI camera to proccesing data on the camera itself. This will reduce proccesing load on the Raspberry Pi
+
+## Our IMU
+
+Our robot uses the BNO055 IMU (Inertial Measurement Unit) to help it maintain direction when moving straight, and to make turns more accurate. The BNO055 combines data from an accelerometer, gyroscope, and magnetometer to provide absolute orientation, which reduces drift and allows the robot to correct its heading in real time.
+
+<table>
+  <tr>
+    <td width="50%" style="text-align: left;">
+      <img src="./other/readmephotos/IMU.jpeg" alt="IMU" width="100%">
+    </td>
+    <td width="50%" style="text-align: left; vertical-align: top;">
+      <h3>Specifications:</h3>
+      <li>I2C Addess: 0x28 </li>
+      <li>Gyroscope: Range ±125°/s to ±2000°/s</li>
+      <li>Accelerometer: Range ±2g, ±4g, ±8g, ±16g</li>
+    </td>
+  </tr>
+</table>
+
+Potential Improvements
+
+- Move the IMU away from areas of magnetic interference
+- Use higher quality IMUs such as the BNO085
+
+## Our Distance Sensor
+
+Apart from the camera, our robot also uses three VL53L1X distance sensors to gather inputs. The sensors are mounted on the front, back, left, and right of the robot respectively. The front sensor is used to avoid hitting the wall, while the back sensor is used in (((()))). The left and right sensors are used to detect when to take a turn. 
+
+<table>
+  <tr>
+    <td width="50%" style="text-align: left;">
+      <img src="./other/readmephotos/DistanceSensor.png" alt="Distance Sensor" width="100%">
+    </td>
+    <td width="50%" style="text-align: left; vertical-align: top;">
+      <h3>Specifications:</h3>
+      <li>Operating Voltage: 3V / 5V </li>
+      <li>Range: 4m</li>
+      <li>I2C Address: 0x29</li>
+    </td>
+  </tr>
+</table>
+
+
+Potential Improvements
+
+- Use sensors like VL53L8CP for better, more accurate detection.
+- Use a lidar sensor
 
 ## The Structure of This Repository
 
