@@ -1,6 +1,3 @@
-# src/sensors/vl53l1x.py
-# New robust version with a filter for anomalous zero readings.
-
 import time
 import board
 import busio
@@ -8,23 +5,20 @@ import adafruit_tca9548a
 import adafruit_vl53l1x
 from src.obstacle_challenge import config
 
-# Module-level objects
+
 i2c = None
 mux = None
 sensors = {}
-# Dictionary to store the last known good distance for each channel
+
 last_known_distances = {}
 
-SENSOR_POSITIONS = {
-    0: "Left  ",
-    1: "Center",
-    2: "Right "
-}
+SENSOR_POSITIONS = {0: "Left  ", 1: "Center", 2: "Right "}
+
 
 def initialize():
     """Initializes sensors and the last_known_distances dictionary."""
     global i2c, mux, sensors, last_known_distances
-    
+
     try:
         i2c = busio.I2C(board.SCL, board.SDA)
     except Exception as e:
@@ -37,7 +31,9 @@ def initialize():
         print("FATAL: TCA9548A Mux not found on I2C bus. Run 'sudo i2cdetect -y 1'")
         return False
 
-    print(f"INFO: Probing for VL53L1X sensors on channels: {config.TOF_CHANNELS_TO_USE}...")
+    print(
+        f"INFO: Probing for VL53L1X sensors on channels: {config.TOF_CHANNELS_TO_USE}..."
+    )
     for i in config.TOF_CHANNELS_TO_USE:
         try:
             sensor_obj = adafruit_vl53l1x.VL53L1X(mux[i])
@@ -49,10 +45,13 @@ def initialize():
             print(f"  - SUCCESS: VL53L1X found and initialized on channel {i}.")
         except (ValueError, OSError) as e:
             sensors[i] = None
-            print(f"  - ERROR: No VL53L1X sensor found on channel {i}. Check wiring. Error: {e}")
+            print(
+                f"  - ERROR: No VL53L1X sensor found on channel {i}. Check wiring. Error: {e}"
+            )
 
     print("INFO: VL53L1X Sensor initialization complete.")
     return True
+
 
 def get_distance(channel):
     """
@@ -62,29 +61,27 @@ def get_distance(channel):
     """
     if channel in sensors and sensors[channel] is not None:
         sensor = sensors[channel]
-        
+
         if sensor.data_ready:
             try:
                 distance_cm = sensor.distance
                 sensor.clear_interrupt()
-                
-                # NEW: Treat a reading of 0.0 as an invalid reading, just like None.
+
                 if distance_cm is None or distance_cm == 0.0:
                     last_known_distances[channel] = None
                     return None
-                
-                # If the reading is valid, update our stored value and return it.
+
                 new_distance_mm = distance_cm * 10.0
                 last_known_distances[channel] = new_distance_mm
                 return new_distance_mm
-                
+
             except OSError:
                 return last_known_distances.get(channel)
         else:
-            # If data is not ready, the sensor is busy. Return the last known value.
             return last_known_distances.get(channel)
-            
+
     return None
+
 
 def get_new_distance(channel, timeout=1.0):
     """
@@ -106,6 +103,7 @@ def get_new_distance(channel, timeout=1.0):
             return None
     return None
 
+
 def cleanup():
     """Stops ranging on all initialized sensors."""
     print("--- Cleaning up ToF Sensors (VL53L1X) ---")
@@ -116,6 +114,7 @@ def cleanup():
             except OSError:
                 print("Warning: I/O error during sensor cleanup. Ignoring.")
 
+
 if __name__ == "__main__":
     print("--- Testing VL53L1X Sensor Module (Blocking Read for Test) ---")
     if not initialize():
@@ -125,7 +124,9 @@ if __name__ == "__main__":
             print("\nReading data from all configured sensors. Press Ctrl+C to stop.")
             while True:
                 output_line = ""
-                sensor_order = [ch for ch in config.TOF_CHANNELS_TO_USE if sensors.get(ch)]
+                sensor_order = [
+                    ch for ch in config.TOF_CHANNELS_TO_USE if sensors.get(ch)
+                ]
 
                 for i in sensor_order:
                     dist_cm = get_new_distance(i)
@@ -135,7 +136,7 @@ if __name__ == "__main__":
                         output_line += f"{pos_name}: {dist_cm:6.1f} cm | "
                     else:
                         output_line += f"{pos_name}:   ----   | "
-                
+
                 print(f"\r{output_line}", end="")
                 time.sleep(0.05)
         except KeyboardInterrupt:

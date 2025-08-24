@@ -1,7 +1,7 @@
-# src/obstacle_challenge/utils.py
 import time
 import cv2
 import threading
+
 
 class FPSCounter:
     """A simple class to measure and display frames per second."""
@@ -23,7 +23,7 @@ class FPSCounter:
     def get_fps(self):
         """Calculates and returns the current FPS."""
         elapsed_time = time.time() - self._start_time
-        # Avoid division by zero
+
         if elapsed_time > 0:
             self.fps = self._num_frames / elapsed_time
         return self.fps
@@ -36,19 +36,19 @@ class FPSCounter:
         self.get_fps()
 
         text = f"FPS: {self.fps:.2f}"
-        text_color = (0, 255, 0)  # Green for good
+        text_color = (0, 255, 0)
 
         if alert_threshold and self.fps < alert_threshold:
-            text_color = (0, 0, 255)  # Red for alert
+            text_color = (0, 0, 255)
 
         cv2.putText(
             frame,
             text,
-            (10, 30),  # Position on the frame
+            (10, 30),
             cv2.FONT_HERSHEY_SIMPLEX,
-            0.8,  # Font scale
+            0.8,
             text_color,
-            2,  # Thickness
+            2,
         )
 
 
@@ -57,6 +57,7 @@ class SafetyMonitor:
     Runs in a background thread to monitor the robot for unsafe conditions,
     like being picked up or tilted over.
     """
+
     def __init__(self, sensor_obj, tilt_threshold_deg):
         """
         :param sensor_obj: The actual adafruit_bno055 sensor object.
@@ -64,7 +65,7 @@ class SafetyMonitor:
         """
         self._sensor = sensor_obj
         self._tilt_threshold = tilt_threshold_deg
-        self._stop_event = threading.Event()  # An event to signal an e-stop
+        self._stop_event = threading.Event()
         self._running = True
         self._thread = threading.Thread(target=self._worker_loop, daemon=True)
 
@@ -78,20 +79,21 @@ class SafetyMonitor:
         """The private function that runs in the background."""
         while self._running and not self._stop_event.is_set():
             try:
-                # Read Euler angles: heading, roll, pitch
                 _, roll, pitch = self._sensor.euler
                 if roll is not None and pitch is not None:
-                    # Check if the absolute roll or pitch exceeds the threshold
-                    if (abs(roll) > self._tilt_threshold or
-                            abs(pitch) > self._tilt_threshold):
-                        print(f"\nFATAL: TILT DETECTED! Roll={roll:.1f}, "
-                              f"Pitch={pitch:.1f}. TRIGGERING E-STOP.")
-                        self._stop_event.set()  # Set the event to signal a stop
-                        break  # Exit the loop
+                    if (
+                        abs(roll) > self._tilt_threshold
+                        or abs(pitch) > self._tilt_threshold
+                    ):
+                        print(
+                            f"\nFATAL: TILT DETECTED! Roll={roll:.1f}, "
+                            f"Pitch={pitch:.1f}. TRIGGERING E-STOP."
+                        )
+                        self._stop_event.set()
+                        break
             except Exception:
-                # Ignore read errors, we'll just try again
                 pass
-            time.sleep(0.05)  # Check ~20 times per second
+            time.sleep(0.05)
 
     def is_triggered(self):
         """Returns True if the emergency stop has been triggered."""

@@ -1,10 +1,9 @@
-# motor.py
 import lgpio
 from rpi_hardware_pwm import HardwarePWM
 import time
 from src.obstacle_challenge import config
 
-# Module-level hardware objects
+
 gpio_handle = None
 motor_pwm = None
 
@@ -47,18 +46,21 @@ def forward(speed):
         lgpio.gpio_write(gpio_handle, config.AIN2_PIN, 0)
         _set_speed(speed)
 
+
 def reverse(speed):
     """Drives the motor in reverse at a given speed."""
     if gpio_handle:
         lgpio.gpio_write(gpio_handle, config.STBY_PIN, 1)
-        lgpio.gpio_write(gpio_handle, config.AIN1_PIN, 0)  # This is the change
-        lgpio.gpio_write(gpio_handle, config.AIN2_PIN, 1)  # This is the change
+        lgpio.gpio_write(gpio_handle, config.AIN1_PIN, 0)
+        lgpio.gpio_write(gpio_handle, config.AIN2_PIN, 1)
         _set_speed(speed)
+
 
 def standby():
     """Puts the motor driver in standby mode (low power, disengaged)."""
     if gpio_handle:
         lgpio.gpio_write(gpio_handle, config.STBY_PIN, 0)
+
 
 def brake():
     """Brakes the motor by shorting its terminals."""
@@ -66,7 +68,8 @@ def brake():
         lgpio.gpio_write(gpio_handle, config.STBY_PIN, 1)
         lgpio.gpio_write(gpio_handle, config.AIN1_PIN, 1)
         lgpio.gpio_write(gpio_handle, config.AIN2_PIN, 1)
-        _set_speed(0) # Set speed to 0 when braking
+        _set_speed(0)
+
 
 def cleanup():
     """Stops the motor and releases GPIO resources."""
@@ -79,7 +82,6 @@ def cleanup():
         lgpio.gpiochip_close(gpio_handle)
 
 
-# Test routine
 if __name__ == "__main__":
     print("--- Testing Motor Module ---")
     if not initialize():

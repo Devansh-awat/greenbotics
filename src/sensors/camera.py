@@ -1,14 +1,13 @@
-# src/sensors/camera.py
 from picamera2 import Picamera2
 import cv2
 import numpy as np
 import time
 from src.obstacle_challenge import config
 
-# Module-level hardware object
+
 picam2 = None
 
-# Global variables to store mouse coordinates
+
 current_mouse_x = -1
 current_mouse_y = -1
 
@@ -59,24 +58,19 @@ def find_biggest_block(frame):
     Processes a cropped region of the frame to find the largest red or green block.
     Returns the cropped frame as the new overlay.
     """
-    # Calculate the crop boundaries based on the full original frame height
+
     full_h, _, _ = frame.shape
     roi_top_y = int(full_h * config.CROP_TOP_FRAC)
     roi_bottom_y = int(full_h * (1.0 - config.CROP_BOTTOM_FRAC))
 
-    # --- NEW: Create the cropped frame for all processing and display ---
-    # All subsequent coordinates will be relative to this cropped image.
     cropped_frame = frame[roi_top_y:roi_bottom_y, :]
-    
-    # Get dimensions of the new cropped frame
+
     h, w, _ = cropped_frame.shape
     total_screen_area = w * h
     max_allowed_area = total_screen_area * config.MAX_BLOCK_AREA_FRACTION
 
-    # Convert the cropped frame to HSV
     hsv = cv2.cvtColor(cropped_frame, cv2.COLOR_BGR2HSV)
-    
-    # --- The rest of the vision logic remains the same, but acts on the cropped frame ---
+
     mask_r1 = cv2.inRange(hsv, config.LOWER_RED_1, config.UPPER_RED_1)
     mask_r2 = cv2.inRange(hsv, config.LOWER_RED_2, config.UPPER_RED_2)
     red_mask = cv2.bitwise_or(mask_r1, mask_r2)
@@ -97,11 +91,10 @@ def find_biggest_block(frame):
     for contours, color in [(contours_red, "red"), (contours_green, "green")]:
         for cnt in contours:
             area = cv2.contourArea(cnt)
-            # Area check is now against the smaller cropped frame area
+
             if not (config.MIN_CONTOUR_AREA < area < max_allowed_area):
                 continue
-            
-            # The y-coordinate check is no longer needed as we've already cropped
+
             x, y, cw, ch = cv2.boundingRect(cnt)
             if not ch > cw:
                 continue
@@ -109,15 +102,18 @@ def find_biggest_block(frame):
             M = cv2.moments(cnt)
             center_x = int(M["m10"] / M["m00"]) if M["m00"] != 0 else 0
             center_y = int(M["m01"] / M["m00"]) if M["m00"] != 0 else 0
-            
-            valid_blocks.append({
-                "contour": cnt, "color": color, "area": area,
-                "centroid": (center_x, center_y)
-            })
 
-    # The overlay frame is now the cropped frame itself
+            valid_blocks.append(
+                {
+                    "contour": cnt,
+                    "color": color,
+                    "area": area,
+                    "centroid": (center_x, center_y),
+                }
+            )
+
     overlay_frame = cropped_frame
-    
+
     if not valid_blocks:
         return None, overlay_frame, hsv
 
@@ -131,8 +127,13 @@ def find_biggest_block(frame):
 
     cv2.rectangle(overlay_frame, (x, y), (x + cw, y + ch), box_color, 2)
     cv2.putText(
-        overlay_frame, largest_block["color"].upper(), (x, y - 10),
-        cv2.FONT_HERSHEY_SIMPLEX, 0.7, box_color, 2,
+        overlay_frame,
+        largest_block["color"].upper(),
+        (x, y - 10),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.7,
+        box_color,
+        2,
     )
 
     return largest_block, overlay_frame, hsv
@@ -146,7 +147,6 @@ def cleanup():
     cv2.destroyAllWindows()
 
 
-# Test routine is updated to show the new cropped view
 if __name__ == "__main__":
     print("--- Testing Camera and Vision Module with Cropping ---")
     if not initialize():
@@ -156,34 +156,56 @@ if __name__ == "__main__":
         cv2.setMouseCallback("Camera Test", mouse_event_handler)
 
         try:
-            print("Displaying CROPPED camera feed with block detection. Press 'q' to exit.")
+            print(
+                "Displaying CROPPED camera feed with block detection. Press 'q' to exit."
+            )
             print("Move mouse over the frame to see pixel RGB and HSV values.")
             while True:
                 full_frame = capture_frame()
                 if full_frame is None:
-                    print("Failed to capture frame."); break
+                    print("Failed to capture frame.")
+                    break
 
-                # The function now returns the cropped overlay and hsv frames
                 block_data, overlay, hsv_frame = find_biggest_block(full_frame)
 
-                # Mouse coordinates are now relative to the cropped frame
                 if (
-                    hsv_frame is not None and
-                    0 <= current_mouse_x < overlay.shape[1] and
-                    0 <= current_mouse_y < overlay.shape[0]
+                    hsv_frame is not None
+                    and 0 <= current_mouse_x < overlay.shape[1]
+                    and 0 <= current_mouse_y < overlay.shape[0]
                 ):
-                    # We need to get the BGR values from the overlay, not the original
                     b, g, r = overlay[current_mouse_y, current_mouse_x]
                     h, s, v = hsv_frame[current_mouse_y, current_mouse_x]
                     text_rgb = f"RGB: ({r:3d}, {g:3d}, {b:3d})"
                     text_hsv = f"HSV: ({h:3d}, {s:3d}, {v:3d})"
-                    cv2.putText(overlay, text_rgb, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-                    cv2.putText(overlay, text_hsv, (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+                    cv2.putText(
+                        overlay,
+                        text_rgb,
+                        (10, 30),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.7,
+                        (255, 255, 255),
+                        2,
+                    )
+                    cv2.putText(
+                        overlay,
+                        text_hsv,
+                        (10, 60),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.7,
+                        (255, 255, 255),
+                        2,
+                    )
 
                 if block_data:
-                    print(f"\rFound: {block_data['color']} block, Area: {block_data['area']:.0f}, Centroid: {block_data['centroid']}  ", end="")
+                    print(
+                        f"\rFound: {block_data['color']} block, Area: {block_data['area']:.0f}, Centroid: {block_data['centroid']}  ",
+                        end="",
+                    )
                 else:
-                    print("\rNo block found.                                      ", end="")
+                    print(
+                        "\rNo block found.                                      ",
+                        end="",
+                    )
 
                 cv2.imshow("Camera Test", overlay)
                 if cv2.waitKey(1) & 0xFF == ord("q"):
