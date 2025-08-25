@@ -17,7 +17,7 @@ Hi! I’m Devansh doing my second WRO season. Last year I represented India in t
 <img src="other/readmephotos/Sheel.jpg" width="150" align="left" style="margin-right:20px;"/>
 
 **Sheel**
-Hi! I'm Sheel. I'm 15, and doing my second WRO season. Last year, our team made it to the International Finals in Robomission Junior. Additionally, I'm learning competetive debate. I also have a dog, and both of us are obsessed with Monkeys. 
+Hi! I'm Sheel. I'm 15, and doing my second WRO season. Last year, our team made it to the International Finals in Robomission Junior. Additionally, I'm learning competitive debate. I also have a dog, and both of us are obsessed with Monkeys. 
 <br clear="left"/>
 
 ---
@@ -40,21 +40,51 @@ Mr.Paresh Gambhava is our chief coach from The Robotronics Club Ahmedabad. He is
 
 # The Challenge
 
-The [Future Engineer Challenge](hhttps://wro-association.org/wp-content/uploads/WRO-2025-Future-Engineers-Self-Driving-Cars-General-Rules.pdf "Vew the season rulebook") for the 2025 WRO Season involves building an autonomous vehicle that can complete two challenges. The first challenge is the Open Challenge. This challenge involves the robot completing three full laps on the field. The field consists of outer boundary walls, and 4 inner walls that are randomly placed to form a closed rectangle.
+The [Future Engineer Challenge](https://wro-association.org/wp-content/uploads/WRO-2025-Future-Engineers-Self-Driving-Cars-General-Rules.pdf "View the season rulebook") for the 2025 WRO Season involves building an autonomous vehicle that can complete two challenges. The first challenge is the Open Challenge. This challenge involves the robot completing three full laps on the field. The field consists of outer boundary walls, and 4 inner walls that are randomly placed to form a closed rectangle.
 
-The second challenge is the Obstacle Challenge. In the Obstacle Challenge red or green cuboids called Traffic Signs are placed along the course. The robot must complete three laps around the track white making sure to pass the red traffic signs from the left, and the green traffic signs from the right. The Obstacle Challenge also has a dedicated Parking Space. The robot must start and end in the parking space to attain full points. The walls placement is fixed for the Obstacle Challenge.
+The second challenge is the Obstacle Challenge. In the Obstacle Challenge red or green cuboids called Traffic Signs are placed along the course. The robot must complete three laps around the track while making sure to pass the red traffic signs from the left, and the green traffic signs from the right. The Obstacle Challenge also has a dedicated Parking Space. The robot must start and end in the parking space to attain full points. The walls placement is fixed for the Obstacle Challenge.
+
+# Our Robot
+
+Having spent a lot of time working on LEGO-based hardware in the 2024 season, we chose to use LEGO for our Robot's Hardware. However the robot also uses a Raspberry Pi, Raspberry Pi camera, and other off the shelf electronic components.
+
+## Photos of our robot
+
+### Top View
+
+<img src="v-photos/Top.jpeg" alt="Top" width="1500"/>
 
 
-# Photos of our robot
+### Bottom View
+
+<img src="v-photos/Bottom.jpeg" alt="Bottom" width="1500"/>
+
+### Front View
+
+<img src="v-photos/Front.jpeg" alt="Front" width="1500"/>
+
+### Back View
+
+<img src="v-photos/Back.jpeg" alt="Back" width="1500"/>
+
+### Left View
+
+<img src="v-photos/Left.jpeg" alt="Left" width="1500"/>
+
+### Right View
+
+<img src="v-photos/Right.jpeg" alt="Right" width="1500"/>
+
+# A Video of our Robot
+
+[!["Video To Our Robot"](other/readmephotos/Thumbnail.gif)]()
 
 
+<img src="other/readmephotos/VideoQR.jpeg" alt="Our Video" width="200"/>
 
-Having spend a lot of time working on Lego based hardware in the 2024 season, we chose to use Lego for our Robot's Hardware. However the robot also uses a Raspberry Pi, Raspberry Pi camera, and other off the shelf electronic components.
+---
 
-# A video of our robot on [Youtube]()
-
-
-# Obastacle Management
+# Obstacle Management
 
 ## Open Challenge
 
@@ -62,8 +92,12 @@ For the Open Challenge, our robot uses the two distance sensors attached to the 
 
 The robot starts by measuring the distance between itself and the walls. If the readings from any of the sensors are 7cm or less, the robot must first move itself away from the walls to the center of the track.
 
-The robot starts moving straight using readings from the attached IMU, while the left and right sensors start measuring the distance between the robot and the 2 sets of walls. The bot will continue moving forward until one of its sensors returns a NONE reading. Our distance sensors cannot measure distances greater than 2m, and will return NONE if such a situation arises. On the WRO course, this can only occur when the inner wall ends at a corner, leaving open space till the wall on the opposite side of the track. When this occurs the robot knows to take a turn. If the right sensor returns a NULL reading, the robot will turn right, and vice versa. 
+The robot starts moving straight using readings from the attached IMU, while the left and right sensors start measuring the distance between the robot and the 2 sets of walls. The bot will continue moving forward until one of its sensors returns a NULL reading. Our distance sensors cannot measure distances greater than 2m, and will return NULL if such a situation arises. On the WRO course, this can only occur when the inner wall ends at a corner, leaving open space till the wall on the opposite side of the track. When this occurs the robot knows to take a turn. If the right sensor returns a NULL reading, the robot will turn right, and vice versa. 
 This scenario will repeat 12 times for each of the 12 turns a robot must take as it completes 3 entire loops with 4 turns each. On completing its 12th turn, the robot will continue moving for 1 to 2 seconds to end in the same straightforward section it started in.
+
+This process is summarized in the flowchart below
+
+<img src="other/readmephotos/Flowchart.png" alt="Flowchart" width="500"/>
 
 ## Obstacle Challenge
 
@@ -80,13 +114,24 @@ While moving in the straightforward section, the robot will be consistently scan
 
 The robot will take 12 turns, before moving forward a few seconds to end up in the same straightforward section as where the parking area is located 
 
+### Traffic Sign Detection
+
+<img src="other/readmephotos/GSignDetection.jpeg" alt="Green Sign Detection" width="300"/>
+
+<img src="other/readmephotos/RSignDetection.jpeg" alt="Left" width="300"/>
+
+
+The traffic sign detection works by capturing frames from the Raspberry Pi camera and focusing only on a region of interest (ROI) to reduce noise and processing load. Each frame is converted from RGB to HSV color space, which makes color detection more reliable under different lighting conditions. 
+
+Contours are then extracted from the cleaned masks to identify potential cubes. The code filters these by size and shape, discarding anything too small, too large, or incorrectly proportioned. One of the checks ensures that the detected object is taller than it is wide in the camera’s view, which helps rule out flat or irrelevant objects. From the remaining candidates, the largest block is chosen as the detected cube. A box and a color label ("RED" or "GREEN") are drawn on the frame, providing a clear real-time overlay of the cube’s position. The code runs continuously, updating the detection live, with an option to quit by pressing ‘q’.
+
 # Mobility Management
 
 ## The Powertrain
 
 ### Our Motor
 
-Keeping with the idea of a Lego-Oriented design, we chose to use a standard LEGO EV3 Medium Motor. While this motor easily integrates with the chassis and axle, it doesn’t directly connect to our motor driver. Instead, we identified the pinout of the LEGO motor, and directly connected the wires to the motor driver. The pinout diagram is shown below
+Keeping with the idea of a LEGO-Oriented design, we chose to use a standard LEGO EV3 Medium Motor. While this motor easily integrates with the chassis and axle, it doesn’t directly connect to our motor driver. Instead, we identified the pinout of the LEGO motor, and directly connected the wires to the motor driver. The pinout diagram is shown below
 
 <img src="other/readmephotos/motordiagram.jpeg" alt="Motor Pinout Diagram" width="1500"/>
 
@@ -112,7 +157,7 @@ Keeping with the idea of a Lego-Oriented design, we chose to use a standard LEGO
 
 Potential improvements: 
 
-- Use a more powerful non-lego motor such as a 12V DC motor that is  
+- Use a more powerful non-LEGO motor such as a 12V DC motor that is  
 
     -Compact and lightweight
 
@@ -163,7 +208,7 @@ For our steering mechanism, we needed a design that was precise. Like all other 
 
 The problem was, that while any LEGO motor would have been both highly precise and easy to integrate, even the smallest motor was too bulky and required separate wires. 
 
-Therefore, we decided to use an off the shelf servo motor. To integrate it into our LEGO based design, we 3D printed a custom servo mount which could be attached with lego screws to the front of the chassis directly behind the front wheel, while simultaneously hot gluing the servo horn to the axle of the front wheels.
+Therefore, we decided to use an off the shelf servo motor. To integrate it into our LEGO based design, we 3D printed a custom servo mount which could be attached with LEGO screws to the front of the chassis directly behind the front wheel, while simultaneously hot gluing the servo horn to the axle of the front wheels.
 
 ### The Servo Motor
 
@@ -181,12 +226,13 @@ To connect the servo motor to our robot, we designed and 3D printed a custom Ser
       <h3>Specifications:</h3>
       <li>Name: SG90</li>
       <li>Operating voltage: 3.0V - 7.2V</li>
-      <li>Weight: 9 gm</li>
+      <li>Weight: 9g</li>
     </td>
   </tr>
 </table>
 
-A diagram of our servo mount is schown below: 
+A diagram of our servo mount is shown below. A 3D Printable file is provided in the models folder.
+
 
 <img src="other/readmephotos/ServoMount.jpeg" alt="Servo Mount" width="300"/>
 
@@ -196,22 +242,21 @@ Potential Improvements:
 - 3D print the servo horn to directly connect to the LEGO Chassis. 
 - Try out different steering mechanisms such as the Ackermann system
 
-
-## Our Chasis
+## Our Chassis
 
 When starting this project, we realized that the bulk of our effort must go into designing the autonomous driving used by this robot. As we wanted to spend more time on software, and having spent a considerable amount of time using LEGO hardware for our 2024 Robomission campaign, we decided to make a LEGO chassis. 
 
-The LEGO chassis has many benefits, the primary one being ease of integration. Lego parts can easily be snapped on and off, making chassis development and chassis far easier and less time consuming. Making changes to a non-lego chassis would have meant that each time we wanted to make a change to our chassis, we would have to make new 3D prints, increasing time, cost, waste and materials used.
+The LEGO chassis has many benefits, the primary one being ease of integration. LEGO parts can easily be snapped on and off, making chassis development far easier and less time consuming. Making changes to a non-LEGO chassis would have meant that each time we wanted to make a change to our chassis, we would have to make new 3D prints, increasing time, cost, waste and materials used.
 
-Our chassis consists of the components that make up the drivetrain and steering system. The current chassis supports our EV3 motor, differential gear, back wheels and axel, front wheels and axel, servo motor and servo mount.
+Our chassis consists of the components that make up the drivetrain and steering system. The current chassis supports our EV3 motor, differential gear, back wheels and axle, front wheels and axle, servo motor and servo mount.
 
 # Power and Sense Management
 
-Our robot recieves inputs from off-the-shelf sensors that have been mounted on the robot. Additionally, it also uses a camera for the obstacle challenge. Inputs are processed by our Raspberry Pi. This entire assembly is powered by a Li-Po battery
+Our robot receives inputs from off-the-shelf sensors that have been mounted on the robot. Additionally, it also uses a camera for the obstacle challenge. Inputs are processed by our Raspberry Pi. This entire assembly is powered by a Li-Po battery
 
 ## Our LiPo battery 
 
-Our robot uses the Bonka 11.1V 2200mAh 35C 3S Lithium Polymer (LiPo) battery. This LiPO battery is often used for drones and quadcopters. We picked this battery, as one of our team members had it readily available, and had used it in other projects beforehand. He found the battery reliable and hence we decided to use it. 
+Our robot uses the Bonka 11.1V 2200mAh 35C 3S Lithium Polymer (LiPo) battery. This LiPo battery is often used for drones and quadcopters. We picked this battery, as one of our team members had it readily available, and had used it in other projects beforehand. He found the battery reliable and hence we decided to use it. 
 
 <table>
   <tr>
@@ -237,7 +282,7 @@ Potential Improvements
 
     - Is safer
 
-    - Has Charge Cycles
+    - Has more charge cycles
 
     - Allows for a smaller robot
 ---
@@ -268,20 +313,20 @@ Potential Improvements
   </tr>
 </table>
 
-## Our Voltage Convertor
+## Our Voltage Converter
 
 Our battery provides 12V, but our Raspberry Pi requires 5V and our motor requires 9V. To supply these lower voltages safely, we used a XY-3606 step-down (buck) voltage converter.
 
 Potential Improvements
 
-- Use a linear convertor to reduce costs
+- Use a linear converter to reduce costs
 - Use a buck converter that is more efficient and provides more power at different voltages. This ensures that all components running at all voltages can be used
 
 
 <table>
   <tr>
     <td width="50%" style="text-align: left;">
-      <img src="./other/readmephotos/VoltageConvertor.jpg" alt="Voltage Convertor" width="100%">
+      <img src="./other/readmephotos/VoltageConvertor.jpg" alt="Voltage Converter" width="100%">
     </td>
     <td width="50%" style="text-align: left; vertical-align: top;">
       <h3>Specifications:</h3>
@@ -294,7 +339,7 @@ Potential Improvements
 
 ## Our Printed Circuit Board (PCB)
 
-In our first draft of the robot, there were a lot of criss-crossing wires between many different components. There was no clear arrangement for the wires, making the robot very messy and confusing to change. During practice runs, wires would routinely get loose, making it very difficult to troubleshoot errors. 
+In our first draft of the robot, there were many criss-crossing wires between many different components. There was no clear arrangement for the wires, making the robot very messy and confusing to change. During practice runs, wires would routinely get loose, making it very difficult to troubleshoot errors. 
 
 To solve this, we designed a PCB which cleanly connected all of our components together, making the robot far cleaner and reliable.
 
@@ -306,9 +351,9 @@ Before:
 
 After
 
-<img src="other/readmephotos/PostPCB.jpeg" alt="Robot After PCB" width="200"/>
+<img src="v-photos/Top.jpeg" alt="Robot After PCB" width="200"/>
 
-An image and printable file for the PCB are provided below
+An image for the PCB are provided below. The models folder contains the files required to print this PCB
 
 <img src="other/readmephotos/PCB.jpeg" alt="PCB" width="200"/>
 
@@ -334,7 +379,7 @@ For image detection, we are using the Raspberry Pi Camera Module 3. Apart from i
 
 Potential Improvements
 
-- Use the Raspberry Pi AI camera to proccesing data on the camera itself. This will reduce proccesing load on the Raspberry Pi
+- Use the Raspberry Pi AI camera to process data on the camera itself. This will reduce processing load on the Raspberry Pi
 
 ## Our IMU
 
@@ -347,7 +392,7 @@ Our robot uses the BNO055 IMU (Inertial Measurement Unit) to help it maintain di
     </td>
     <td width="50%" style="text-align: left; vertical-align: top;">
       <h3>Specifications:</h3>
-      <li>I2C Addess: 0x28 </li>
+      <li>I2C Address: 0x28 </li>
       <li>Gyroscope: Range ±125°/s to ±2000°/s</li>
       <li>Accelerometer: Range ±2g, ±4g, ±8g, ±16g</li>
     </td>
@@ -361,7 +406,7 @@ Potential Improvements
 
 ## Our Distance Sensor
 
-Apart from the camera, our robot also uses three VL53L1X distance sensors to gather inputs. The sensors are mounted on the front, back, left, and right of the robot respectively. The front sensor is used to avoid hitting the wall, while the back sensor is used in (((()))). The left and right sensors are used to detect when to take a turn. 
+Apart from the camera, our robot also uses four VL53L1X distance sensors to gather inputs. The sensors are mounted on the front, back, left, and right of the robot respectively. The front sensor is used to avoid hitting the wall, while the back sensor is used during parking. The left and right sensors are used to detect when to take a turn. 
 
 <table>
   <tr>
@@ -383,6 +428,37 @@ Potential Improvements
 - Use sensors like VL53L8CP for better, more accurate detection.
 - Use a lidar sensor
 
+## Our Multiplexer
+
+All four of our distance sensors share the same I²C address. Our CJMCU TCA9548A multiplexer splits the 4 distance sensors into separate channels so only one device is active at a time. This gives each device a “virtual” unique address, letting them coexist without conflict.
+
+<table>
+  <tr>
+    <td width="50%" style="text-align: left;">
+      <img src="./other/readmephotos/Multiplexer.jpeg" alt="Distance Sensor" width="100%">
+    </td>
+    <td width="50%" style="text-align: left; vertical-align: top;">
+      <h3>Specifications:</h3>
+      <li>Model Number: CJMCU TCA9548A </li>
+      <li>No. of Channels: 8 </li>
+    </td>
+  </tr>
+</table>
+
+## An Overview
+
+After all of these components have been added, the plate to which all of these components have been attached will resemble the image shown below.
+
+<img src="other/readmephotos/FullCircuit.jpeg" alt="Robot Circuit" width="200"/>
+
+<img src="other/readmephotos/FullCircuit2.jpeg" alt="Robot Circuit" width="200"/>
+
+---
+
+# How we used Github 
+
+Our team used Github to store all of our code such that it is accessible to all team members and to those who wish to use this repository in the future. We have made frequent commits to this repository, and this repository stands as testament to our efforts, and the process of design as a whole
+
 ## The Structure of This Repository
 
 * `t-photos` contains 2 photos of the team (an official one and one funny photo with all team members)
@@ -392,3 +468,56 @@ Potential Improvements
 * `src` contains code of control software for all components which were programmed to participate in the competition
 * `models` is for the files for models used by 3D printers, laser cutting machines and CNC machines to produce the vehicle elements. If there is nothing to add to this location, the directory can be removed.
 * `other` is for other files which can be used to understand how to prepare the vehicle for the competition. It may include documentation how to connect to a SBC/SBM and upload files there, datasets, hardware specifications, communication protocols descriptions etc. If there is nothing to add to this location, the directory can be removed.
+
+# Bill of Materials
+
+## LEGO
+
+Our hardware has been primarily consists of common LEGO EV3 pieces. The required pieces can be found in EV sets. Apart from standard EV3 Pieces, to rebuild this robot, you will require 
+
+- A LEGO EV3 Motor
+- A LEGO Differential Gear
+- LEGO Wheels
+
+This set contains most of the required parts: https://www.amazon.in/Lego-Education-Mindstorms-EV3-Core/dp/B00DEA55Z8
+
+You can purchase the LEGO differential gear here: https://www.amazon.in/dp/B0CRRWXHF3
+
+
+## SG90 Servo Motor
+
+The SG90 Servo Motor used for the steering system can be found here: https://robu.in/product/towerpro-sg90-9g-mini-servo-9-gram/
+
+## TB6612FNG Motor Driver 
+
+Our motor driver is available here: https://robu.in/product/motor-driver-tb6612fng-module-performance-ultra-small-volume-3-pi-matching-performance-ultra-l298n/
+
+
+## Our LiPo Battery
+
+Our robot is powered by a Bonka 11.1V 2200mAh LiPo Battery. You can purchase it here: https://www.amazon.in/dp/B0DMVY4P33
+
+## Our Raspberry Pi 5
+
+The Single Board Computer at the heart of our robot can be bought from here: https://robu.in/product/raspberry-pi-5-model-8gb/
+
+## Our Voltage Converter
+
+Our voltage converter helps to step down voltages to safe levels for all of our components. You can purchase it here: https://robu.in/product/24v-12v-to-5v-5a-power-module-dc-dc-xy-3606-power-converter/
+
+## Our Camera
+
+As it easily integrates with the Raspberry Pi, we chose to use the RPI Camera Module 3. You can purchase it here: https://www.silverlineelectronics.in/products/copy-of-test-1
+
+## Our IMU
+
+Our BNO055 Inertial Measurement Unit (IMU) helps the robot move straight. You can buy it here: https://robu.in/product/df-robot-febno055-intelligent-9-axis-sensor-rmion-bno055-intelligent-9-axis-sensor-breakout/
+
+
+## Our Distance Sensors
+
+The 4 VL5311X Distance Sensors are available here: https://robocraze.com/products/vl53l1x-tof-distance-sensor-breakout-with-4-meter-range-7semi
+
+## Our Multiplexer
+
+To help us in using 4 distance sensors, we used a CJMCU TCA9548A multiplexer purchasable from here: https://robu.in/product/cjmcu-tca9548a-i2c-8-channel-multiple-extensions-development-board/
