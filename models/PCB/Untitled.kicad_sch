@@ -4586,6 +4586,36 @@
 			(embedded_fonts no)
 		)
 	)
+	(text "VL53l1x"
+		(exclude_from_sim no)
+		(at 71.628 16.764 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+		)
+		(uuid "212cd03b-a7a4-44e7-8b9d-f71f130b3c5a")
+	)
+	(text "XY-3606\n"
+		(exclude_from_sim no)
+		(at 86.36 141.224 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+		)
+		(uuid "5999b9c4-c7e2-41c9-b884-553413c8a23f")
+	)
+	(text "Multiplexer\n"
+		(exclude_from_sim no)
+		(at 74.93 109.728 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+		)
+		(uuid "74ffc095-fbf9-419e-9bad-c5e228dd0f1e")
+	)
 	(junction
 		(at 119.38 130.81)
 		(diameter 0)
@@ -7023,6 +7053,7 @@
 					(size 1.27 1.27)
 				)
 				(justify left)
+				(hide yes)
 			)
 		)
 		(property "Component Class" ""
@@ -7054,6 +7085,7 @@
 					(size 1.27 1.27)
 				)
 				(justify left)
+				(hide yes)
 			)
 		)
 		(property "Component Class" ""
@@ -7116,6 +7148,7 @@
 					(size 1.27 1.27)
 				)
 				(justify left)
+				(hide yes)
 			)
 		)
 		(property "Component Class" ""
@@ -7178,6 +7211,7 @@
 					(size 1.27 1.27)
 				)
 				(justify left)
+				(hide yes)
 			)
 		)
 		(property "Component Class" ""
@@ -8319,10 +8353,9 @@
 		(in_bom yes)
 		(on_board yes)
 		(dnp no)
-		(fields_autoplaced yes)
 		(uuid "b040181e-b33e-4ee5-be9a-e55ae614bff5")
-		(property "Reference" "IC6"
-			(at 161.29 76.2 0)
+		(property "Reference" "RaspberryPi"
+			(at 160.528 96.266 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -8330,7 +8363,7 @@
 			)
 		)
 		(property "Value" "~"
-			(at 161.29 78.74 0)
+			(at 161.29 80.01 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -8487,7 +8520,7 @@
 		(instances
 			(project ""
 				(path "/93becf76-4cbc-4b5f-b49a-c47e1799cb2f"
-					(reference "IC6")
+					(reference "RaspberryPi")
 					(unit 1)
 				)
 			)
@@ -8714,7 +8747,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "e1ba079a-e0ca-477c-aa80-c80c7e3cf5de")
-		(property "Reference" "U1"
+		(property "Reference" "VL53l1X"
 			(at 69.85 20.32 0)
 			(effects
 				(font
@@ -8774,7 +8807,7 @@
 		(instances
 			(project ""
 				(path "/93becf76-4cbc-4b5f-b49a-c47e1799cb2f"
-					(reference "U1")
+					(reference "VL53l1X")
 					(unit 1)
 				)
 			)
@@ -8796,6 +8829,7 @@
 				(font
 					(size 1.27 1.27)
 				)
+				(hide yes)
 			)
 		)
 		(property "Value" "~"

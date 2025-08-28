@@ -512,6 +512,9 @@
       ],
       "Net-(IC6-5V_PWR-Pad21)": [
         "5A"
+      ],
+      "Net-(R4-Pad1)": [
+        "5A"
       ]
     },
     "netclass_patterns": []

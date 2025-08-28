@@ -52,28 +52,28 @@ Having spent a lot of time working on LEGO-based hardware in the 2024 season, we
 
 ### Top View
 
-<img src="v-photos/Top.jpeg" alt="Top" width="1500"/>
+<img src="v-photos/Top.jpeg" alt="Top" width="500"/>
 
 
 ### Bottom View
 
-<img src="v-photos/Bottom.jpeg" alt="Bottom" width="1500"/>
+<img src="v-photos/Bottom.jpeg" alt="Bottom" width="500"/>
 
 ### Front View
 
-<img src="v-photos/Front.jpeg" alt="Front" width="1500"/>
+<img src="v-photos/Front.jpeg" alt="Front" width="500"/>
 
 ### Back View
 
-<img src="v-photos/Back.jpeg" alt="Back" width="1500"/>
+<img src="v-photos/Back.jpeg" alt="Back" width="500"/>
 
 ### Left View
 
-<img src="v-photos/Left.jpeg" alt="Left" width="1500"/>
+<img src="v-photos/Left.jpeg" alt="Left" width="500"/>
 
 ### Right View
 
-<img src="v-photos/Right.jpeg" alt="Right" width="1500"/>
+<img src="v-photos/Right.jpeg" alt="Right" width="500"/>
 
 # A Video of our Robot
 
