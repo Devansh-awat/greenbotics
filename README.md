@@ -6,6 +6,10 @@ Welcome to the Greenbotics 2025 repository! This repository contains everything 
 
 # Our Team
 
+<img src="t-photos/GreenboticsTeamPic.jpeg" width="1000" style="margin-right:20px;"/>
+
+---
+
 <img src="other/readmephotos/Devansh.jpg" width="150" align="left" style="margin-right:20px;"/>
 
 **Devansh**  
@@ -22,7 +26,7 @@ Hi! I'm Sheel. I'm 15, and doing my second WRO season. Last year, our team made 
 
 ---
 
-<img src="other/readmephotos/Rakshith.png" width="150" align="left" style="margin-right:20px;"/>
+<img src="other/readmephotos/Rakshith.jpeg" width="150" align="left" style="margin-right:20px;"/>
 
 **Rakshith**  
 I'm Rakshith, a 9th grader passionate about robotics and aspiring to study engineering in Germany. I love building drones, experimenting with sensors. I also have 3 dogs, and two of them live with my grandparents in Hyderabad. 
@@ -37,6 +41,13 @@ I'm Rakshith, a 9th grader passionate about robotics and aspiring to study engin
 Mr.Paresh Gambhava is our chief coach from The Robotronics Club Ahmedabad. He is a robotics enthusiast, and electrical engineer by profession. He has vast experience training students for Robotics competition and projects. 
 
 <br clear="left"/>
+
+---
+
+<img src="t-photos/GreenboticsClowns.jpeg" width="300" style="margin-right:20px;"/>
+
+
+Yes. We did know the camera was on. 
 
 # The Challenge
 
@@ -77,10 +88,10 @@ Having spent a lot of time working on LEGO-based hardware in the 2024 season, we
 
 # A Video of our Robot
 
-[!["Video To Our Robot"](other/readmephotos/Thumbnail.gif)]()
+[!["Video To Our Robot"](other/readmephotos/Thumbnail.gif)](https://youtu.be/tl9SpU311F4)
 
 
-<img src="other/readmephotos/VideoQR.jpeg" alt="Our Video" width="200"/>
+<img src="other/readmephotos/VideoQR.png" alt="Our Video" width="200"/>
 
 ---
 
@@ -97,33 +108,15 @@ This scenario will repeat 12 times for each of the 12 turns a robot must take as
 
 This process is summarized in the flowchart below
 
-<img src="other/readmephotos/Flowchart.png" alt="Flowchart" width="500"/>
+<img src="other/readmephotos/Flowchart.png" alt="Flowchart" width="1000"/>
 
 ## Obstacle Challenge
 
-For the obstacle challenge, as our robot starts within the parking area, it must first maneuver its way out. However, before it does so, it also judges the driving direction. If the robot is placed within the parking area with its right sensor closer to the outer wall, the robot will know to move anticlockwise, and vice versa.
+The robot initially orients itself in the parking area and chooses a general direction for driving depending on its location. It spins around and drives out while promptly checking for immediate blocks in front by making adaptations in its movement in tiny translations forward or backward before it gets back on track.
 
-The robot will proceed to take a 90 degree turn to maneuver out of the parking area. However, when 2/3rds of the turn has been completed, and the robot is at 60 degrees relative to where it started, it will scan to check if a block is present. If a block is present, the robot will complete its 90 degree turn and move forwards or backwards to better orient itself.
+Once it gets underway directly ahead, it follows walls and occasionally seeks blocks out by making short excursions around blocks before assuming its path again.
 
-If the driving direction is anticlockwise and a green block is detected, the robot will move forward, and then complete its turn. If the block is red, the robot will move backward before completing the turn. 
-
-If the driving direction is clockwise and a green block is detected, the robot will move backward before completing the turn. If the block is red, the robot will move forward, and then complete the turn.
-
-The robot will move straight using the IMU, and the distance sensors for ‘wall following’, 
-While moving in the straightforward section, the robot will be consistently scanning for blocks. When a block is detected, the robot will take a 45 degree turn in the stipulated turning direction (right for red and left for green). When the block has been crossed, the robot will take a 45 degree turn in the opposite direction to return to the center of the 2 walls. The robot also keeps a count of how many cubes it has scanned. If it has scanned 0 (such as when it enters a straightforward section), it will expect a further 1 or 2 cubes. If 2 cubes have been scanned, it will not look for any more cubes until it has detected a wall up ahead and turned.
-
-The robot will take 12 turns, before moving forward a few seconds to end up in the same straightforward section as where the parking area is located 
-
-### Traffic Sign Detection
-
-<img src="other/readmephotos/GSignDetection.jpeg" alt="Green Sign Detection" width="300"/>
-
-<img src="other/readmephotos/RSignDetection.jpeg" alt="Left" width="300"/>
-
-
-The traffic sign detection works by capturing frames from the Raspberry Pi camera and focusing only on a region of interest (ROI) to reduce noise and processing load. Each frame is converted from RGB to HSV color space, which makes color detection more reliable under different lighting conditions. 
-
-Contours are then extracted from the cleaned masks to identify potential cubes. The code filters these by size and shape, discarding anything too small, too large, or incorrectly proportioned. One of the checks ensures that the detected object is taller than it is wide in the camera’s view, which helps rule out flat or irrelevant objects. From the remaining candidates, the largest block is chosen as the detected cube. A box and a color label ("RED" or "GREEN") are drawn on the frame, providing a clear real-time overlay of the cube’s position. The code runs continuously, updating the detection live, with an option to quit by pressing ‘q’.
+After it carries out a number of turns, it eventually ends up traveling in the direction in which it started.
 
 # Mobility Management
 
@@ -415,7 +408,7 @@ Apart from the camera, our robot also uses four VL53L1X distance sensors to gath
     </td>
     <td width="50%" style="text-align: left; vertical-align: top;">
       <h3>Specifications:</h3>
-      <li>Operating Voltage: 3V / 5V </li>
+      <li>Operating Voltage: 3.3V </li>
       <li>Range: 4m</li>
       <li>I2C Address: 0x29</li>
     </td>
@@ -449,9 +442,14 @@ All four of our distance sensors share the same I²C address. Our CJMCU TCA9548A
 
 After all of these components have been added, the plate to which all of these components have been attached will resemble the image shown below.
 
-<img src="other/readmephotos/FullCircuit.jpeg" alt="Robot Circuit" width="200"/>
+<img src="other/readmephotos/FullCicruit.jpeg" alt="Robot Circuit" width="200"/>
 
 <img src="other/readmephotos/FullCircuit2.jpeg" alt="Robot Circuit" width="200"/>
+
+A full wiring diagram is shown in the screenshot below, and available at models/PCB/~Untitled.kicad_sch.lck
+
+<img src="other/readmephotos/WiringDiagram.png" alt="Robot Circuit" width="200"/>
+
 
 ---
 
@@ -469,11 +467,14 @@ Our team used Github to store all of our code such that it is accessible to all 
 * `models` is for the files for models used by 3D printers, laser cutting machines and CNC machines to produce the vehicle elements. If there is nothing to add to this location, the directory can be removed.
 * `other` is for other files which can be used to understand how to prepare the vehicle for the competition. It may include documentation how to connect to a SBC/SBM and upload files there, datasets, hardware specifications, communication protocols descriptions etc. If there is nothing to add to this location, the directory can be removed.
 
+<img src="t-photos/GreenboticsClowns.jpeg" width="150" style="margin-right:20px;"/>
+
+
 # Bill of Materials
 
 ## LEGO
 
-Our hardware has been primarily consists of common LEGO EV3 pieces. The required pieces can be found in EV sets. Apart from standard EV3 Pieces, to rebuild this robot, you will require 
+Our hardware has been primarily consists of common LEGO EV3 pieces. The required pieces can be found in EV3 sets. Apart from standard EV3 Pieces, to rebuild this robot, you will require 
 
 - A LEGO EV3 Motor
 - A LEGO Differential Gear
