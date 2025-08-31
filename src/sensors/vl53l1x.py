@@ -38,7 +38,7 @@ def initialize():
         try:
             sensor_obj = adafruit_vl53l1x.VL53L1X(mux[i])
             sensor_obj.distance_mode = 1
-            sensor_obj.timing_budget = 33
+            sensor_obj.timing_budget = 50
             sensor_obj.start_ranging()
             sensors[i] = sensor_obj
             last_known_distances[i] = None

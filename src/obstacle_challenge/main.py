@@ -11,8 +11,33 @@ from src.sensors import camera, bno055, vl53l1x
 from src.obstacle_challenge.utils import FPSCounter, SafetyMonitor
 
 
+# ==============================================================================
+# --- PARKING MANEUVER CONFIGURATION ---
+# ==============================================================================
+MANEUVER_SEQUENCE = [
+    {'type': 'drive', 'target_heading': 0.0, 'servo_angle': 0, 'unlimited_servo': False, 'drive_direction': 'reverse', 'speed': 60, 'duration_frames': 10},
+    {'type': 'turn', 'target_heading': 45.0,  'servo_angle': 45, 'unlimited_servo': False, 'drive_direction': 'forward', 'speed': 80, 'duration_frames': 0},
+    {'type': 'drive', 'target_heading': 45.0,   'servo_angle': 0,  'unlimited_servo': False, 'drive_direction': 'reverse', 'speed': 80, 'duration_frames': 40},
+    {'type': 'turn', 'target_heading': 15.0,   'servo_angle': 60, 'unlimited_servo': True,  'drive_direction': 'reverse', 'speed': 80, 'duration_frames': 0},
+    {'type': 'turn', 'target_heading': 0.0,   'servo_angle': -40,  'unlimited_servo': False, 'drive_direction': 'forward', 'speed': 90, 'duration_frames': 0},
+]
+# ==============================================================================
+
+# --- System & Parking Constants ---
+TILT_THRESHOLD_DEGREES = 15.0
+BUTTON_PIN = 23
+WALL_APPROACH_THRESHOLD_MM = 100
+POSITIONING_DRIVE_FRAMES = 100
+SCAN_THRESHOLD_MM = 100
+FRONT_SENSOR_CHANNEL = 1
+LEFT_SENSOR_CHANNEL = 0
+PARKING_DRIVE_SPEED = 80
+PARKING_HEADING_LOCK_TOLERANCE = 5.0
+
+kp = 0.0 
+
+
 def get_angular_difference(angle1, angle2):
-    """Calculates the shortest angle between two headings."""
     if angle1 is None or angle2 is None:
         return 360
     diff = angle1 - angle2
@@ -24,7 +49,7 @@ def get_angular_difference(angle1, angle2):
 
 
 def steer_with_gyro(current_heading_goal, current_yaw,clip_right=-45,clip_left=45):
-    """Steers the robot to a target heading."""
+    global kp
     if (
         config.GYRO_ENABLED
         and current_heading_goal is not None
@@ -35,7 +60,7 @@ def steer_with_gyro(current_heading_goal, current_yaw,clip_right=-45,clip_left=4
             error += 360
         while error > 180:
             error -= 360
-        steer = config.GYRO_KP * error
+        steer = kp * error
         steer = np.clip(steer,clip_right,clip_left)
         servo.set_angle(steer)
         return steer
@@ -47,10 +72,9 @@ safety_monitor = None
 
 
 def initialize_all():
-    """Initializes all hardware components and the safety monitor."""
     global safety_monitor,button,led
     print("--- Initializing All Systems ---")
-    button = Button(23)
+    button = Button(BUTTON_PIN)
     led = LED(12)
     if not all(
         [
@@ -62,15 +86,13 @@ def initialize_all():
         ]
     ):
         return False
-    if config.GYRO_ENABLED:
-        safety_monitor = SafetyMonitor(bno055.sensor, config.TILT_THRESHOLD_DEGREES)
+    
     time.sleep(0.5)
     print("--- System Initialization Complete ---")
     return True
 
 
 def cleanup_all():
-    """Cleans up all hardware resources safely."""
     print("\n--- Cleaning up All Systems ---")
     if safety_monitor:
         safety_monitor.stop()
@@ -87,65 +109,90 @@ if __name__ == "__main__":
         cleanup_all()
         sys.exit(1)
 
-    INITIAL_HEADING = bno055.get_heading()
-    if INITIAL_HEADING is None:
-        INITIAL_HEADING = 0.0
-    print(f"INFO: Initial heading (our '0') locked at: {INITIAL_HEADING:.2f}°")
-
-    print("INFO: Detecting driving direction...")
-    time.sleep(1.0)
-    dist_left = vl53l1x.get_distance(0)
-    dist_right = vl53l1x.get_distance(2)
-    driving_direction = "clockwise"
-    if dist_left is not None and dist_right is not None:
-        if dist_left < dist_right:
-            driving_direction = "clockwise"
-        else:
-            driving_direction = "counter-clockwise"
-    elif dist_left is not None:
-        driving_direction = "clockwise"
-    elif dist_right is not None:
-        driving_direction = "counter-clockwise"
-    else:
-        print("WARNING: No walls detected. Defaulting to CLOCKWISE.")
-    print(f"INFO: Driving direction set to {driving_direction.upper()}")
-
-    target_heading = INITIAL_HEADING
-    maneuver_base_heading = 0
+    kp = config.GYRO_KP
+    
+    INITIAL_HEADING = 0.0
+    target_heading = 0.0
+    maneuver_base_heading = 0.0
     detected_block_color = None
     maneuver_color = None
     scan_initiated = False
     turn_counter = 0
     blocks_passed_this_lap = 0
     frames_in_state = 0
-    start_time = time.monotonic()
+    start_time = 0
     current_state=None
+    driving_direction=None
+    
+    stage_index = 0
+    maneuver_base_heading = 0
 
     try:
         WINDOW_NAME = "Robot View"
         cv2.namedWindow(WINDOW_NAME)
         led.on()
+        print("\nINFO: Ready. Press button to set '0' heading and start.")
+
         while True:
             if safety_monitor and safety_monitor.is_triggered():
                 break
-            elapsed_time = time.monotonic() - start_time
+                
+            elapsed_time = time.monotonic() - start_time if start_time > 0 else 0
             frame = camera.capture_frame()
             if frame is None:
                 break
             block_data, overlay_frame, _ = camera.find_biggest_block(frame)
             current_yaw = bno055.get_heading()
-            # Check the button ONLY if the state machine hasn't started yet
-            if current_state is None and button.is_active:
-                print("--- Button Pressed! Starting Obstacle Challenge ---")
+            print(current_state)
+            if current_state is None and button.is_pressed:
+                print("\n--- Button Pressed! Starting Obstacle Challenge ---")
+                print("INFO: Detecting driving direction...")
+                time.sleep(1.0)
+                dist_left = vl53l1x.get_distance(0)
+                dist_right = vl53l1x.get_distance(2)
+                driving_direction = "clockwise"
+                if dist_left is not None and dist_right is not None:
+                    if dist_left < dist_right:
+                        driving_direction = "clockwise"
+                    else:
+                        driving_direction = "counter-clockwise"
+                elif dist_left is not None:
+                    driving_direction = "clockwise"
+                elif dist_right is not None:
+                    driving_direction = "counter-clockwise"
+                else:
+                    print("WARNING: No walls detected. Defaulting to CLOCKWISE.")
+                print(f"INFO: Driving direction set to {driving_direction.upper()}")
+                if driving_direction=='counter-clockwise':
+                    MANEUVER_SEQUENCE=[
+                    #{'type': 'drive', 'target_heading': 0.0, 'servo_angle': 0, 'unlimited_servo': False, 'drive_direction': 'forward', 'speed': 60, 'duration_frames': 15},
+                    {'type': 'turn', 'target_heading': -50.0,  'servo_angle': -45, 'unlimited_servo': False, 'drive_direction': 'forward', 'speed': 80, 'duration_frames': 0},
+                    {'type': 'drive', 'target_heading': -50.0,   'servo_angle': 0,  'unlimited_servo': False, 'drive_direction': 'reverse', 'speed': 80, 'duration_frames': 37},
+                    {'type': 'turn', 'target_heading': -15.0,   'servo_angle': -60, 'unlimited_servo': True,  'drive_direction': 'reverse', 'speed': 80, 'duration_frames': 0},
+                    {'type': 'turn', 'target_heading': 0.0,   'servo_angle': 40,  'unlimited_servo': False, 'drive_direction': 'forward', 'speed': 90, 'duration_frames': 0},
+                    ]
+                new_heading = bno055.get_heading()
+                if new_heading is not None:
+                    INITIAL_HEADING = new_heading
+                else:
+                    INITIAL_HEADING = 0.0
+                target_heading = INITIAL_HEADING
+                print(f"INFO: Initial heading (our '0') locked at: {INITIAL_HEADING:.2f}°")
+                
+                if config.GYRO_ENABLED:
+                    print("--- Starting Safety Monitor ---")
+                    safety_monitor = SafetyMonitor(bno055.sensor, TILT_THRESHOLD_DEGREES)
+                
+                start_time = time.monotonic()
                 current_state = (
                     "INITIAL_RIGHT_TURN_CW"
                     if driving_direction == "clockwise"
                     else "INITIAL_LEFT_TURN"
                 )
-                #current_state='DRIVING_STRAIGHT'
                 led.off()
+                time.sleep(0.5)
 
-            if current_state == "INITIAL_LEFT_TURN":
+            elif current_state == "INITIAL_LEFT_TURN":
                 frames_in_state += 1
                 if frames_in_state == 1:
                     target_heading = (
@@ -226,19 +273,46 @@ if __name__ == "__main__":
                     ) % 360
                     motor.forward(config.DRIVE_SPEED)
                 servo.set_angle_unlimited(60)
+
+                # Check if it's time to start the scan
                 if (
                     get_angular_difference(INITIAL_HEADING, current_yaw)
                     >= config.CCW_SCAN_ANGLE
                     and not scan_initiated
                 ):
                     scan_initiated = True
+                    print("--- Starting 5-second continuous scan ---")
                     motor.brake()
-                    time.sleep(0.5)
-                    scan_frame = camera.capture_frame()
-                    if scan_frame is not None:
-                        scan_block_data, _, _ = camera.find_biggest_block(scan_frame)
+                    
+                    # Start a 5-second timer
+                    scan_start_time = time.monotonic()
+                    scan_duration = 5.0
+
+                    # Loop for the duration, actively looking for a block
+                    while time.monotonic() - scan_start_time < scan_duration:
+                        # Capture a frame in every loop
+                        scan_frame = camera.capture_frame()
+                        if scan_frame is None:
+                            continue # Skip this loop iteration if frame is bad
+
+                        # Analyze the frame for a block
+                        scan_block_data, overlay_frame, _ = camera.find_biggest_block(scan_frame)
+                        
+                        # Provide live visual feedback during the scan
+                        cv2.imshow(WINDOW_NAME, overlay_frame)
+                        cv2.waitKey(1)
+
+                        # If a block is found, save its color and exit the scan loop immediately
                         if scan_block_data:
                             detected_block_color = scan_block_data["color"]
+                            print(f"Block found! Color: {detected_block_color}. Ending scan early.")
+                            break # Exit the 'while' loop
+                    
+                    # If the loop finished without finding a block, detected_block_color remains None
+                    if detected_block_color is None:
+                        print("Scan finished. No block was detected.")
+
+                    # Resume driving after the scan is complete (or was broken out of)
                     motor.forward(config.DRIVE_SPEED)
                 if (
                     scan_initiated
@@ -292,6 +366,7 @@ if __name__ == "__main__":
                     current_state = "DRIVING_STRAIGHT"
 
             elif current_state == "DRIVING_STRAIGHT":
+                frames_in_state+=1
                 steer_with_gyro(target_heading, current_yaw)
                 motor.forward(config.DRIVE_SPEED)
                 forward_dist = vl53l1x.get_distance(config.TOF_FORWARD_SENSOR_CHANNEL)
@@ -323,22 +398,40 @@ if __name__ == "__main__":
                             maneuver_base_heading - config.MANEUVER_ANGLE_DEG+10 + 360
                         ) % 360
                     current_state = "MANEUVER_TURN_1"
+                # Determine if this is the final leg of the obstacle course.
+                is_final_leg = (turn_counter == config.TOTAL_TURNS - 1)
 
-                cornering_threshold = config.TOF_CORNERING_THRESHOLD_MM
-                if driving_direction == "counter-clockwise":
-                    cornering_threshold -= 100 
+                # Set the appropriate distance threshold for the wall.
+                if is_final_leg:
+                    # On the final approach, use the tight parking threshold.
+                    wall_detection_threshold = WALL_APPROACH_THRESHOLD_MM
+                    x=0
+                else:
+                    # On normal laps, use the standard cornering threshold.
+                    wall_detection_threshold = config.TOF_CORNERING_THRESHOLD_MM
+                    x=100
+                    if driving_direction == "counter-clockwise":
+                        wall_detection_threshold -= 100
 
-                if (
-                    look_for_wall
-                    and forward_dist is not None
-                    and forward_dist < cornering_threshold
-                ):
-                    if turn_counter < config.TOTAL_TURNS:
+                # Check if the robot has reached the wall using the chosen threshold.
+                if (look_for_wall and forward_dist is not None and x<forward_dist < wall_detection_threshold)and frames_in_state>25:
+                    
+                    # If the wall is detected, decide what to do next based on the lap.
+                    if is_final_leg:
+                        # --- TRANSITION DIRECTLY TO PARKING ---
+                        print("\n--- Final approach complete. Starting parking sequence. ---")
+                        # We are already at the wall, so we have completed the
+                        # "APPROACHING_WALL_1" state's job.
+                        # Now, we start the first turn of the parking maneuver.
+                        kp = 3.0 # Switch to the parking gyro gain
+                        frames_in_state = 0
+                        current_state = "PARKING_TURN_1" # Go to the parking turn state
+                    else:
+                        print(forward_dist,wall_detection_threshold)
+                        # --- PERFORM A NORMAL CORNER TURN ---
                         frames_in_state = 0
                         current_state = "PERFORMING_CORNER_TURN"
-                    else:
-                        current_state = "MISSION_COMPLETE"
-
+                    
             elif current_state == "MANEUVER_TURN_1":
                 frames_in_state += 1
                 x=35
@@ -388,10 +481,13 @@ if __name__ == "__main__":
 
             elif current_state == "MANEUVER_TURN_2":
                 x=37
+                y=-32
                 if (turn_counter==4 or turn_counter==8) and maneuver_color=='red':
                     x=45
+                if maneuver_color=='red':
+                    y=-28
                 frames_in_state += 1
-                steer_with_gyro(target_heading, current_yaw,-32,x)
+                steer_with_gyro(target_heading, current_yaw,y,x)
                 motor.forward(config.DRIVE_SPEED)
                 if (
                     frames_in_state > config.MIN_FRAMES_IN_TURN
@@ -473,13 +569,7 @@ if __name__ == "__main__":
                     < config.HEADING_LOCK_TOLERANCE
                 ):
                     blocks_passed_this_lap += 1
-                    if (
-                        turn_counter >= config.TOTAL_TURNS
-                        and blocks_passed_this_lap > 0
-                    ):
-                        current_state = "MISSION_COMPLETE"
-                    else:
-                        current_state = "DRIVING_STRAIGHT"
+                    current_state = "DRIVING_STRAIGHT"
 
             elif current_state == "PERFORMING_CORNER_TURN":
                 frames_in_state += 1
@@ -498,11 +588,138 @@ if __name__ == "__main__":
                     turn_counter += 1
                     blocks_passed_this_lap = 0
                     frames_in_state = 0
-                    current_state = "DRIVING_STRAIGHT"
+                    
+                    if turn_counter < config.TOTAL_TURNS:
+                        current_state = "DRIVING_STRAIGHT"
+                    else:
+                        print("\n--- OBSTACLE COURSE COMPLETE ---")
+                        print("--- STARTING PARKING MANEUVER ---")
+                        kp = 3.0
+                        stage_index = 0
+                        current_state = "PARKING_TURN_1"
+
+
+            # --- PARKING SEQUENCE STATES ---
+            
+            elif current_state == "APPROACHING_WALL_1":
+                target_heading=INITIAL_HEADING
+                steer_with_gyro(target_heading, current_yaw)
+                motor.forward(PARKING_DRIVE_SPEED)
+                forward_dist = vl53l1x.get_distance(FRONT_SENSOR_CHANNEL)
+                dist_str = f"{forward_dist:.1f}" if forward_dist is not None else "N/A"
+                print(f"\rDriving forward, waiting for wall... Dist: {dist_str} mm", end="")
+                if forward_dist is not None and forward_dist < WALL_APPROACH_THRESHOLD_MM:
+                    frames_in_state = 0
+                    current_state = "PARKING_TURN_1"
+                    print(f"\n[STATE CHANGE] ==> {current_state}")
+
+            elif current_state == "PARKING_TURN_1":
+                frames_in_state += 1
+                if frames_in_state == 1:
+                    if driving_direction=='clockwise':
+                        target_heading = (target_heading + 90 + 360) % 360
+                        print(f"ACTION: Performing 90-degree CW reverse turn. Target: {target_heading:.1f}°")
+                    else:
+                        target_heading = (target_heading - 90 + 360) % 360
+                        print(f"ACTION: Performing 90-degree CCW reverse turn. Target: {target_heading:.1f}°")
+                if get_angular_difference(current_yaw, target_heading) < PARKING_HEADING_LOCK_TOLERANCE:
+                    servo.set_angle(5)
+                elif driving_direction=='clockwise':
+                    servo.set_angle(-45)
+                else:
+                    servo.set_angle_unlimited(60)
+                motor.reverse(PARKING_DRIVE_SPEED)
+                if get_angular_difference(current_yaw, target_heading) < PARKING_HEADING_LOCK_TOLERANCE:
+                    frames_in_state = 0
+                    current_state = "DRIVE_FORWARD_POSITIONING"
+                    print(f"\n[STATE CHANGE] ==> {current_state}")
+
+            elif current_state == "DRIVE_FORWARD_POSITIONING":
+                frames_in_state += 1
+                x=10
+                if driving_direction=='clockwise':
+                    x=-3
+                steer_with_gyro(target_heading+x, current_yaw)
+                motor.forward(PARKING_DRIVE_SPEED)
+                print(f"\rDriving forward to scan position... Frames: {frames_in_state}/{POSITIONING_DRIVE_FRAMES}", end="")
+                if frames_in_state > POSITIONING_DRIVE_FRAMES:
+                    frames_in_state = 0
+                    current_state = "WAITING_FOR_SCAN"
+                    print(f"\n[STATE CHANGE] ==> {current_state}")
+
+            elif current_state == "WAITING_FOR_SCAN":
+                steer_with_gyro(target_heading, current_yaw)
+                motor.forward(50)
+                if driving_direction=='clockwise':
+                    dist_left = vl53l1x.get_distance(LEFT_SENSOR_CHANNEL)
+                else:
+                    dist_left = vl53l1x.get_distance(2)
+                dist_str = f"{dist_left:.1f}" if dist_left is not None else "N/A"
+                print(f"\rScanning... Left Dist: {dist_str} mm", end="")
+                if dist_left is not None and dist_left < SCAN_THRESHOLD_MM:
+                    print(f"\nScan triggered at {dist_left:.1f}mm. Starting maneuver sequence.")
+                    motor.brake()
+                    time.sleep(0.5)
+                    maneuver_base_heading = target_heading
+                    current_state = "RUNNING_MANEUVER"
+
+            elif current_state == "RUNNING_MANEUVER":
+                if stage_index >= len(MANEUVER_SEQUENCE):
+                    current_state = "MISSION_COMPLETE"
+                    continue
+
+                stage = MANEUVER_SEQUENCE[stage_index]
+                stage_type = stage['type']
+                
+                if stage_type == 'drive' and stage['target_heading'] == 0.0:
+                    current_stage_target_heading = maneuver_base_heading
+                else:
+                    current_stage_target_heading = (maneuver_base_heading + stage['target_heading'] + 360) % 360
+
+                if stage_type == 'turn':
+                    frames_in_state += 1
+                    if frames_in_state == 1:
+                        print(f"\n[STAGE {stage_index + 1}] Starting TURN to {current_stage_target_heading:.1f}°")
+                    
+                    if stage['unlimited_servo']:
+                        servo.set_angle_unlimited(stage['servo_angle'])
+                    else:
+                        servo.set_angle(stage['servo_angle'])
+
+                    if stage['drive_direction'] == 'forward':
+                        motor.forward(stage['speed'])
+                    else:
+                        motor.reverse(stage['speed'])
+
+                    if get_angular_difference(current_yaw, current_stage_target_heading) < PARKING_HEADING_LOCK_TOLERANCE:
+                        print(f"--- Stage {stage_index + 1} complete. ---")
+                        stage_index += 1
+                        frames_in_state = 0
+                
+                elif stage_type == 'drive':
+                    frames_in_state += 1
+                    if frames_in_state == 1:
+                        print(f"\n[STAGE {stage_index + 1}] Starting DRIVE for {stage['duration_frames']} frames.")
+
+                    steer_with_gyro(current_stage_target_heading, current_yaw)
+                    
+                    if stage['drive_direction'] == 'forward':
+                        motor.forward(stage['speed'])
+                    else:
+                        kp=-3
+                        motor.reverse(stage['speed'])
+                    
+                    print(f"\rDriving... Frames: {frames_in_state}/{stage['duration_frames']}", end="")
+
+                    if frames_in_state > stage['duration_frames']:
+                        print(f"\n--- Stage {stage_index + 1} complete. ---")
+                        stage_index += 1
+                        frames_in_state = 0
 
             elif current_state == "MISSION_COMPLETE":
                 motor.brake()
                 servo.set_angle(0)
+                print(f"\nFull Challenge Complete! Final Time: {elapsed_time:.2f} seconds.")
                 break
 
             cv2.imshow(WINDOW_NAME, overlay_frame)

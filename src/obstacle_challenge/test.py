@@ -12,7 +12,7 @@ from src.obstacle_challenge.utils import SafetyMonitor
 # ==============================================================================
 MANEUVER_SEQUENCE = [
     # Stage 1: Go straight back for 10 frames.
-    {'type': 'drive', 'target_heading': 0.0, 'servo_angle': 0, 'unlimited_servo': False, 'drive_direction': 'reverse', 'speed': 60, 'duration_frames': 20},
+    {'type': 'drive', 'target_heading': 0.0, 'servo_angle': 0, 'unlimited_servo': False, 'drive_direction': 'reverse', 'speed': 60, 'duration_frames': 10},
     
     # Stage 2: Turn to 45 degrees while driving FORWARD.
     {'type': 'turn', 'target_heading': 45.0,  'servo_angle': 45, 'unlimited_servo': False, 'drive_direction': 'forward', 'speed': 80, 'duration_frames': 0},
@@ -150,9 +150,12 @@ if __name__ == "__main__":
                 if frames_in_state == 1:
                     target_heading = (INITIAL_HEADING + 90 + 360) % 360
                     print(f"ACTION: Performing 90-degree CW reverse turn. Target: {target_heading:.1f}°")
-                servo.set_angle(-45)
-                motor.reverse(DRIVE_SPEED)
                 if get_angular_difference(current_yaw, target_heading) < HEADING_LOCK_TOLERANCE:
+                    servo.set_angle(0)
+                else:
+                    servo.set_angle(-45)
+                motor.reverse(DRIVE_SPEED)
+                if get_angular_difference(current_yaw, target_heading) < HEADING_LOCK_TOLERANCE and vl53l1x.get_distance(3) is not None and vl53l1x.get_distance(3)<400:
                     frames_in_state = 0
                     current_state = "DRIVE_FORWARD_POSITIONING"
                     print(f"\n[STATE CHANGE] ==> {current_state}")
