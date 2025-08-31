@@ -3,7 +3,7 @@ import sys
 import traceback
 import cv2
 import numpy as np
-
+from gpiozero import Button, LED
 
 from src.obstacle_challenge import config
 from src.motors import motor, servo
@@ -12,6 +12,7 @@ from src.obstacle_challenge.utils import FPSCounter, SafetyMonitor
 
 
 def get_angular_difference(angle1, angle2):
+    """Calculates the shortest angle between two headings."""
     if angle1 is None or angle2 is None:
         return 360
     diff = angle1 - angle2
@@ -22,7 +23,8 @@ def get_angular_difference(angle1, angle2):
     return abs(diff)
 
 
-def steer_with_gyro(current_heading_goal, current_yaw):
+def steer_with_gyro(current_heading_goal, current_yaw,clip_right=-45,clip_left=45):
+    """Steers the robot to a target heading."""
     if (
         config.GYRO_ENABLED
         and current_heading_goal is not None
@@ -34,6 +36,7 @@ def steer_with_gyro(current_heading_goal, current_yaw):
         while error > 180:
             error -= 360
         steer = config.GYRO_KP * error
+        steer = np.clip(steer,clip_right,clip_left)
         servo.set_angle(steer)
         return steer
     servo.set_angle(0.0)
@@ -44,8 +47,11 @@ safety_monitor = None
 
 
 def initialize_all():
-    global safety_monitor
+    """Initializes all hardware components and the safety monitor."""
+    global safety_monitor,button,led
     print("--- Initializing All Systems ---")
+    button = Button(23)
+    led = LED(12)
     if not all(
         [
             motor.initialize(),
@@ -64,6 +70,7 @@ def initialize_all():
 
 
 def cleanup_all():
+    """Cleans up all hardware resources safely."""
     print("\n--- Cleaning up All Systems ---")
     if safety_monitor:
         safety_monitor.stop()
@@ -103,12 +110,6 @@ if __name__ == "__main__":
         print("WARNING: No walls detected. Defaulting to CLOCKWISE.")
     print(f"INFO: Driving direction set to {driving_direction.upper()}")
 
-    current_state = (
-        "INITIAL_RIGHT_TURN_CW"
-        if driving_direction == "clockwise"
-        else "INITIAL_LEFT_TURN"
-    )
-
     target_heading = INITIAL_HEADING
     maneuver_base_heading = 0
     detected_block_color = None
@@ -118,12 +119,12 @@ if __name__ == "__main__":
     blocks_passed_this_lap = 0
     frames_in_state = 0
     start_time = time.monotonic()
+    current_state=None
 
-    print(f"\n[STATE CHANGE] ==> {current_state}")
     try:
         WINDOW_NAME = "Robot View"
         cv2.namedWindow(WINDOW_NAME)
-
+        led.on()
         while True:
             if safety_monitor and safety_monitor.is_triggered():
                 break
@@ -133,6 +134,16 @@ if __name__ == "__main__":
                 break
             block_data, overlay_frame, _ = camera.find_biggest_block(frame)
             current_yaw = bno055.get_heading()
+            # Check the button ONLY if the state machine hasn't started yet
+            if current_state is None and button.is_active:
+                print("--- Button Pressed! Starting Obstacle Challenge ---")
+                current_state = (
+                    "INITIAL_RIGHT_TURN_CW"
+                    if driving_direction == "clockwise"
+                    else "INITIAL_LEFT_TURN"
+                )
+                #current_state='DRIVING_STRAIGHT'
+                led.off()
 
             if current_state == "INITIAL_LEFT_TURN":
                 frames_in_state += 1
@@ -161,18 +172,27 @@ if __name__ == "__main__":
                     and get_angular_difference(current_yaw, target_heading)
                     < config.HEADING_LOCK_TOLERANCE
                 ):
+                    frames_in_state = 0
                     if detected_block_color == "green":
                         current_state = "DRIVE_FORWARD_GREEN"
                     elif detected_block_color == "red":
                         current_state = "REVERSE_BEFORE_TURN"
                     else:
-                        current_state = "MISSION_COMPLETE"
+                        current_state = "DRIVE_FORWARD_NONE"
 
             elif current_state == "DRIVE_FORWARD_GREEN":
                 frames_in_state += 1
                 steer_with_gyro(target_heading, current_yaw)
                 motor.forward(config.DRIVE_SPEED)
                 if frames_in_state > config.CCW_NORMAL_DRIVE_FRAMES:
+                    frames_in_state = 0
+                    current_state = "FINAL_RIGHT_TURN"
+
+            elif current_state == "DRIVE_FORWARD_NONE":
+                frames_in_state += 1
+                steer_with_gyro(target_heading, current_yaw)
+                motor.forward(config.DRIVE_SPEED)
+                if frames_in_state > config.CCW_SHORT_DRIVE_FRAMES:
                     frames_in_state = 0
                     current_state = "FINAL_RIGHT_TURN"
 
@@ -225,18 +245,27 @@ if __name__ == "__main__":
                     and get_angular_difference(current_yaw, target_heading)
                     < config.HEADING_LOCK_TOLERANCE
                 ):
+                    frames_in_state = 0
                     if detected_block_color == "green":
                         current_state = "REVERSE_FOR_GREEN_CW"
                     elif detected_block_color == "red":
                         current_state = "DRIVE_FORWARD_RED_CW"
                     else:
-                        current_state = "MISSION_COMPLETE"
+                        current_state = "DRIVE_FORWARD_NONE_CW"
 
             elif current_state == "DRIVE_FORWARD_RED_CW":
                 frames_in_state += 1
                 steer_with_gyro(target_heading, current_yaw)
                 motor.forward(config.DRIVE_SPEED)
                 if frames_in_state > config.CW_DRIVE_FORWARD_RED_FRAMES:
+                    frames_in_state = 0
+                    current_state = "FINAL_LEFT_TURN_CW"
+
+            elif current_state == "DRIVE_FORWARD_NONE_CW":
+                frames_in_state += 1
+                steer_with_gyro(target_heading, current_yaw)
+                motor.forward(config.DRIVE_SPEED)
+                if frames_in_state > config.CW_DRIVE_FORWARD_NONE_FRAMES:
                     frames_in_state = 0
                     current_state = "FINAL_LEFT_TURN_CW"
 
@@ -284,11 +313,25 @@ if __name__ == "__main__":
                             maneuver_base_heading - config.MANEUVER_ANGLE_DEG + 360
                         ) % 360
                     frames_in_state = 0
+                    if turn_counter==4 or turn_counter==8:
+                        if maneuver_color=='red' and driving_direction=='counter-clockwise':
+                            target_heading = (
+                            maneuver_base_heading + config.MANEUVER_ANGLE_DEG-10
+                        ) % 360
+                        elif maneuver_color=='green' and driving_direction=='clockwise':
+                            target_heading = (
+                            maneuver_base_heading - config.MANEUVER_ANGLE_DEG+10 + 360
+                        ) % 360
                     current_state = "MANEUVER_TURN_1"
-                elif (
+
+                cornering_threshold = config.TOF_CORNERING_THRESHOLD_MM
+                if driving_direction == "counter-clockwise":
+                    cornering_threshold -= 100 
+
+                if (
                     look_for_wall
                     and forward_dist is not None
-                    and forward_dist < config.TOF_CORNERING_THRESHOLD_MM
+                    and forward_dist < cornering_threshold
                 ):
                     if turn_counter < config.TOTAL_TURNS:
                         frames_in_state = 0
@@ -298,7 +341,10 @@ if __name__ == "__main__":
 
             elif current_state == "MANEUVER_TURN_1":
                 frames_in_state += 1
-                steer_with_gyro(target_heading, current_yaw)
+                x=35
+                if (turn_counter==4 or turn_counter==8) and maneuver_color=='red':
+                    x=45
+                steer_with_gyro(target_heading, current_yaw,-29,x)
                 motor.forward(config.DRIVE_SPEED)
                 if (
                     frames_in_state > config.MIN_FRAMES_IN_TURN
@@ -306,32 +352,55 @@ if __name__ == "__main__":
                     < config.HEADING_LOCK_TOLERANCE
                 ):
                     frames_in_state = 0
-                    current_state = "MANEUVER_DRIVE_1"
+                    if maneuver_color == "red":
+                        current_state = "MANEUVER_DRIVE_1"
+                    else:
+                        target_heading = (
+                            maneuver_base_heading + config.MANEUVER_ANGLE_DEG+7 + 360
+                        ) % 360
+                        if (turn_counter==4 or turn_counter==8) and maneuver_color=='green' and driving_direction=='clockwise':
+                            target_heading = (
+                            maneuver_base_heading + config.MANEUVER_ANGLE_DEG-10 + 360
+                        ) % 360
+                        current_state = "MANEUVER_TURN_2"
 
             elif current_state == "MANEUVER_DRIVE_1":
                 frames_in_state += 1
                 steer_with_gyro(target_heading, current_yaw)
                 motor.forward(config.DRIVE_SPEED)
-
-                drive_duration = config.MANEUVER_DRIVE_FRAMES_SIDEWAYS
-                if turn_counter == 4 or turn_counter == 8:
-                    drive_duration = config.SPECIAL_TURN_SIDEWAYS_FRAMES
-                if frames_in_state > drive_duration:
-                    target_heading = maneuver_base_heading
-                    frames_in_state = 0
-                    current_state = "MANEUVER_TURN_2"
+                
+                if current_state == "MANEUVER_DRIVE_1":
+                    drive_duration = config.MANEUVER_DRIVE_FRAMES_SIDEWAYS
+                    if (turn_counter==4 or turn_counter==8) and maneuver_color=='red' and driving_direction=='counter-clockwise':
+                        drive_duration=config.SPECIAL_TURN_SIDEWAYS_FRAMES
+                    if frames_in_state > drive_duration:
+                        if maneuver_color == "red":
+                            target_heading = (
+                                maneuver_base_heading - config.MANEUVER_ANGLE_DEG+5 + 360
+                            ) % 360
+                        if turn_counter==4 or turn_counter==8 and maneuver_color=='red' and driving_direction=='counter-clockwise':
+                            target_heading = (
+                            maneuver_base_heading - config.MANEUVER_ANGLE_DEG+10
+                        ) % 360
+                            
+                        frames_in_state = 0
+                        current_state = "MANEUVER_TURN_2"
 
             elif current_state == "MANEUVER_TURN_2":
+                x=37
+                if (turn_counter==4 or turn_counter==8) and maneuver_color=='red':
+                    x=45
                 frames_in_state += 1
-                steer_with_gyro(target_heading, current_yaw)
+                steer_with_gyro(target_heading, current_yaw,-32,x)
                 motor.forward(config.DRIVE_SPEED)
                 if (
                     frames_in_state > config.MIN_FRAMES_IN_TURN
                     and get_angular_difference(current_yaw, target_heading)
                     < config.HEADING_LOCK_TOLERANCE
                 ):
+                    target_heading=maneuver_base_heading
                     frames_in_state = 0
-                    current_state = "MANEUVER_DRIVE_2"
+                    current_state = "MANEUVER_TURN_4"
 
             elif current_state == "MANEUVER_DRIVE_2":
                 frames_in_state += 1
@@ -365,17 +434,39 @@ if __name__ == "__main__":
                 steer_with_gyro(target_heading, current_yaw)
                 motor.forward(config.DRIVE_SPEED)
 
-                drive_duration = config.MANEUVER_DRIVE_FRAMES_SIDEWAYS
-                if turn_counter == 4 or turn_counter == 8:
-                    drive_duration = config.SPECIAL_TURN_SIDEWAYS_FRAMES
-                if frames_in_state > drive_duration:
-                    target_heading = maneuver_base_heading
-                    frames_in_state = 0
-                    current_state = "MANEUVER_TURN_4"
+                sensor_to_check = None
+                if maneuver_color == 'red':
+                    sensor_to_check = 0
+                elif maneuver_color == 'green':
+                    sensor_to_check = 2
+
+                if sensor_to_check is not None:
+                    dist = vl53l1x.get_distance(sensor_to_check)
+                    if dist is not None and 0 < dist < 500:
+                        print(f"  -> Drive 3 exit by sensor {sensor_to_check} at {dist}mm.")
+                        target_heading = maneuver_base_heading
+                        frames_in_state = 0
+                        current_state = "MANEUVER_TURN_4"
+                if current_state == "MANEUVER_DRIVE_3":
+                    drive_duration = 0
+                    if turn_counter == 4 or turn_counter == 8:
+                        drive_duration = config.SPECIAL_TURN_SIDEWAYS_FRAMES
+                    else:
+                        drive_duration = config.MANEUVER_DRIVE_FRAMES_SIDEWAYS
+
+                    if frames_in_state > drive_duration:
+                        print("  -> Drive 3 exit by timer.")
+                        print(dist)
+                        target_heading = maneuver_base_heading
+                        frames_in_state = 0
+                        current_state = "MANEUVER_TURN_4"
 
             elif current_state == "MANEUVER_TURN_4":
                 frames_in_state += 1
-                steer_with_gyro(target_heading, current_yaw)
+                x=25
+                if (turn_counter==4 or turn_counter==8)and maneuver_color=='red':
+                    x=45
+                steer_with_gyro(target_heading, current_yaw,-25,x)
                 motor.forward(config.DRIVE_SPEED)
                 if (
                     get_angular_difference(current_yaw, target_heading)
