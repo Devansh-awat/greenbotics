@@ -112,11 +112,21 @@ This process is summarized in the flowchart below
 
 ## Obstacle Challenge
 
-The robot initially orients itself in the parking area and chooses a general direction for driving depending on its location. It spins around and drives out while promptly checking for immediate blocks in front by making adaptations in its movement in tiny translations forward or backward before it gets back on track.
+For the obstacle challenge, as our robot starts within the parking area, it must first maneuver its way out. However, before it does so, it also judges the driving direction. If the robot is placed within the parking area with its right sensor closer to the outer wall, the robot will know to move anticlockwise, and vice versa.
 
-Once it gets underway directly ahead, it follows walls and occasionally seeks blocks out by making short excursions around blocks before assuming its path again.
+The robot will proceed to take a 90 degree turn to maneuver out of the parking area. However, when 2/3rds of the turn has been completed, and the robot is at 60 degrees relative to where it started, it will scan to check if a block is present. If a block is present, the robot will complete its 90 degree turn and move forwards or backwards to better orient itself.
 
-After it carries out a number of turns, it eventually ends up traveling in the direction in which it started.
+If the driving direction is anticlockwise and a green block is detected, the robot will move forward, and then complete its turn. If the block is red, the robot will move backward before completing the turn. 
+
+If the driving direction is clockwise and a green block is detected, the robot will move backward before completing the turn. If the block is red, the robot will move forward, and then complete the turn.
+
+The robot will move straight using the IMU, and the distance sensors for ‘wall following’, 
+While moving in the straightforward section, the robot will be consistently scanning for blocks. When a block is detected, the robot will take a 45 degree turn in the stipulated turning direction (right for red and left for green). When the block has been crossed, the robot will take a 45 degree turn in the opposite direction to return to the center of the 2 walls. 
+
+The robot also keeps a count of how many cubes it has scanned. If it has scanned 0 (such as when it enters a straightforward section), it will expect a further 1 or 2 cubes. If 2 cubes have been scanned, it will not look for any more cubes until it has detected a wall up ahead and turned. Each time the robot takes a turn, it will go close to the wall it is driving towards and take a turn in towards the open stretch in reverse.  
+
+The robot will take 12 turns, before moving forward a few seconds to end up in the same straightforward section as where the parking area is located 
+
 
 # Mobility Management
 
