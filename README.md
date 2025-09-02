@@ -452,9 +452,9 @@ All four of our distance sensors share the same I²C address. Our CJMCU TCA9548A
 
 After all of these components have been added, the plate to which all of these components have been attached will resemble the image shown below.
 
-<img src="other/readmephotos/FullCicruit.jpeg" alt="Robot Circuit" width="200"/>
+<img src="other/readmephotos/FullCicruit.jpeg" alt="Robot Circuit" width="400"/>
 
-<img src="other/readmephotos/FullCircuit2.jpeg" alt="Robot Circuit" width="200"/>
+<img src="other/readmephotos/FullCircuit2.jpeg" alt="Robot Circuit" width="400"/>
 
 A full wiring diagram is shown in the screenshot below, and available at models/PCB/~Untitled.kicad_sch
 
@@ -477,7 +477,9 @@ Our team used Github to store all of our code such that it is accessible to all 
 * `models` is for the files for models used by 3D printers, laser cutting machines and CNC machines to produce the vehicle elements. If there is nothing to add to this location, the directory can be removed.
 * `other` is for other files which can be used to understand how to prepare the vehicle for the competition. It may include documentation how to connect to a SBC/SBM and upload files there, datasets, hardware specifications, communication protocols descriptions etc. If there is nothing to add to this location, the directory can be removed.
 
-<img src="t-photos/GreenboticsClowns.jpeg" width="150" style="margin-right:20px;"/>
+---
+
+<img src="t-photos/GreenboticsClowns.jpeg" width="300" style="margin-right:20px;"/>
 
 
 # Bill of Materials
