@@ -4,6 +4,8 @@ import traceback
 import cv2
 import numpy as np
 from gpiozero import Button, LED
+import os
+from datetime import datetime
 
 from src.obstacle_challenge import config
 from src.motors import motor, servo
@@ -36,6 +38,7 @@ PARKING_HEADING_LOCK_TOLERANCE = 5.0
 
 kp = 0.0 
 
+HEADLESS = not sys.stdout.isatty() or os.environ.get('DISPLAY') is None
 
 def get_angular_difference(angle1, angle2):
     if angle1 is None or angle2 is None:
@@ -69,7 +72,33 @@ def steer_with_gyro(current_heading_goal, current_yaw,clip_right=-45,clip_left=4
 
 
 safety_monitor = None
+video_writer = None
+video_path = None
 
+def init_video_writer(example_frame, base_dir="/home/devansh/videos", preferred="mp4"):
+    """
+    Create a cv2.VideoWriter sized to the frame you pass in.
+    Tries MP4 first, then falls back to AVI (XVID) if MP4 fails.
+    """
+    os.makedirs(base_dir, exist_ok=True)
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    h, w = example_frame.shape[:2]
+    fps = 30.0
+
+    if preferred == "mp4":
+        fourcc = cv2.VideoWriter_fourcc(*"mp4v")   # widely supported on Pi
+        mp4_path = os.path.join(base_dir, f"wro_run_{ts}.mp4")
+        vw = cv2.VideoWriter(mp4_path, fourcc, fps, (w, h))
+        if vw.isOpened():
+            print(f"[REC] Writing MP4 to: {mp4_path}")
+            return vw, mp4_path
+
+    # Fallback to AVI if MP4 couldn't open (codec missing, etc.)
+    fourcc = cv2.VideoWriter_fourcc(*"XVID")
+    avi_path = os.path.join(base_dir, f"wro_run_{ts}.avi")
+    vw = cv2.VideoWriter(avi_path, fourcc, fps, (w, h))
+    print(f"[REC] Writing AVI to: {avi_path}")
+    return vw, avi_path
 
 def initialize_all():
     global safety_monitor,button,led
@@ -101,6 +130,10 @@ def cleanup_all():
     camera.cleanup()
     bno055.cleanup()
     vl53l1x.cleanup()
+    global video_writer, video_path
+    if video_writer is not None:
+        video_writer.release()
+        print(f"[REC] Saved recording to: {video_path}")
     print("--- Cleanup Complete ---")
 
 
@@ -129,7 +162,8 @@ if __name__ == "__main__":
 
     try:
         WINDOW_NAME = "Robot View"
-        cv2.namedWindow(WINDOW_NAME)
+        if not HEADLESS:
+            cv2.namedWindow(WINDOW_NAME)
         led.on()
         print("\nINFO: Ready. Press button to set '0' heading and start.")
 
@@ -142,6 +176,16 @@ if __name__ == "__main__":
             if frame is None:
                 break
             block_data, overlay_frame, _ = camera.find_biggest_block(frame)
+            # --- Recording setup & write ---
+            if overlay_frame is None:
+                overlay_frame = frame  # ensure we always have something to write/show
+
+            if video_writer is None:
+                video_writer, video_path = init_video_writer(overlay_frame)
+
+            # Write current frame to file
+            video_writer.write(overlay_frame)
+            # --- end recording block ---
             current_yaw = bno055.get_heading()
             print(current_state)
             if current_state is None and button.is_pressed:
@@ -165,11 +209,11 @@ if __name__ == "__main__":
                 print(f"INFO: Driving direction set to {driving_direction.upper()}")
                 if driving_direction=='counter-clockwise':
                     MANEUVER_SEQUENCE=[
-                    #{'type': 'drive', 'target_heading': 0.0, 'servo_angle': 0, 'unlimited_servo': False, 'drive_direction': 'forward', 'speed': 60, 'duration_frames': 15},
+                    {'type': 'drive', 'target_heading': 0.0, 'servo_angle': 0, 'unlimited_servo': False, 'drive_direction': 'reverse', 'speed': 60, 'duration_frames': 11},
                     {'type': 'turn', 'target_heading': -50.0,  'servo_angle': -45, 'unlimited_servo': False, 'drive_direction': 'forward', 'speed': 80, 'duration_frames': 0},
                     {'type': 'drive', 'target_heading': -50.0,   'servo_angle': 0,  'unlimited_servo': False, 'drive_direction': 'reverse', 'speed': 80, 'duration_frames': 37},
                     {'type': 'turn', 'target_heading': -15.0,   'servo_angle': -60, 'unlimited_servo': True,  'drive_direction': 'reverse', 'speed': 80, 'duration_frames': 0},
-                    {'type': 'turn', 'target_heading': 0.0,   'servo_angle': 40,  'unlimited_servo': False, 'drive_direction': 'forward', 'speed': 90, 'duration_frames': 0},
+                    {'type': 'turn', 'target_heading': -5.0,   'servo_angle': 60,  'unlimited_servo': True, 'drive_direction': 'forward', 'speed': 90, 'duration_frames': 0},
                     ]
                 new_heading = bno055.get_heading()
                 if new_heading is not None:
@@ -189,6 +233,9 @@ if __name__ == "__main__":
                     if driving_direction == "clockwise"
                     else "INITIAL_LEFT_TURN"
                 )
+                # starting from middle for testing
+                #current_state='DRIVING_STRAIGHT'
+                #turn_counter=4
                 led.off()
                 time.sleep(0.5)
 
@@ -299,8 +346,9 @@ if __name__ == "__main__":
                         scan_block_data, overlay_frame, _ = camera.find_biggest_block(scan_frame)
                         
                         # Provide live visual feedback during the scan
-                        cv2.imshow(WINDOW_NAME, overlay_frame)
-                        cv2.waitKey(1)
+                        if not HEADLESS:
+                            cv2.imshow(WINDOW_NAME, overlay_frame)
+                            cv2.waitKey(1)
 
                         # If a block is found, save its color and exit the scan loop immediately
                         if scan_block_data:
@@ -471,7 +519,7 @@ if __name__ == "__main__":
                             target_heading = (
                                 maneuver_base_heading - config.MANEUVER_ANGLE_DEG+5 + 360
                             ) % 360
-                        if turn_counter==4 or turn_counter==8 and maneuver_color=='red' and driving_direction=='counter-clockwise':
+                        if (turn_counter==4 or turn_counter==8) and maneuver_color=='red' and driving_direction=='counter-clockwise':
                             target_heading = (
                             maneuver_base_heading - config.MANEUVER_ANGLE_DEG+10
                         ) % 360
@@ -575,9 +623,9 @@ if __name__ == "__main__":
                 frames_in_state += 1
                 if frames_in_state == 1:
                     if driving_direction == "counter-clockwise":
-                        target_heading = (target_heading - 90 + 360) % 360
+                        target_heading = (target_heading - 90+0.25 + 360) % 360
                     else:
-                        target_heading = (target_heading + 90 + 360) % 360
+                        target_heading = (target_heading + 90+0.25 + 360) % 360
                 servo_angle = -45 if driving_direction == "clockwise" else 45
                 servo.set_angle(servo_angle)
                 motor.reverse(config.DRIVE_SPEED)
@@ -721,10 +769,10 @@ if __name__ == "__main__":
                 servo.set_angle(0)
                 print(f"\nFull Challenge Complete! Final Time: {elapsed_time:.2f} seconds.")
                 break
-
-            cv2.imshow(WINDOW_NAME, overlay_frame)
-            if cv2.waitKey(1) & 0xFF == ord("q"):
-                break
+            if not HEADLESS:
+                cv2.imshow(WINDOW_NAME, overlay_frame)
+                if cv2.waitKey(1) & 0xFF == ord("q"):
+                    break
 
     except KeyboardInterrupt:
         print("\nINFO: Keyboard interrupt detected.")

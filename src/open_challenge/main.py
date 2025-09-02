@@ -1,4 +1,5 @@
 import time
+from gpiozero import Button, LED
 from src.motors import motor, servo
 from src.sensors import vl53l1x, bno055
 from src.open_challenge import config
@@ -42,9 +43,9 @@ try:
     motor.initialize()
     vl53l1x.initialize()
     bno055.initialize()
-
-    if config.GYRO_ENABLED:
-        safety_monitor = SafetyMonitor(bno055.sensor, config.TILT_THRESHOLD_DEGREES)
+    button = Button(23)
+    led = LED(12)
+    led.on()
 
     print("--- Initialization Complete ---")
 
@@ -57,7 +58,11 @@ except Exception as e:
     vl53l1x.cleanup()
     bno055.cleanup()
     exit()
-
+while not button.is_pressed:
+    pass
+led.off()
+if config.GYRO_ENABLED:
+        safety_monitor = SafetyMonitor(bno055.sensor, config.TILT_THRESHOLD_DEGREES)
 
 current_state = "STARTING_RUN"
 turn_counter = 0
