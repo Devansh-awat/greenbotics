@@ -1,4 +1,5 @@
-![Greenbotics 2025](other/readmephotos/logo.png)
+<img src="other/readmephotos/logo.png" alt="Greenbotics 2025" width="300" align="center"/>
+
 
 # This Incredible Repository
 
@@ -363,7 +364,7 @@ An image for the PCB are provided below. The models folder contains the files re
 
 ## Our Camera
 
-For image detection, we are using the Raspberry Pi Camera Module 3. Apart from its ease of integration with the raspberry pi reducing a major complexity for us, the Camera module 3 has autofocus, wide-angle and low-light performance, all of which are very useful in a competition setting.
+For image detection, we are using the Raspberry Pi Camera Module 3. Apart from its ease of integration with the raspberry pi reducing a major complexity for us, the Camera module 3 has autofocus, wide-angle and low-light performance, all of which are very useful in a competition setting. The Camera Module 3 is a CMOS Camera
 
 <table>
   <tr>
@@ -448,7 +449,7 @@ All four of our distance sensors share the same I²C address. Our CJMCU TCA9548A
   </tr>
 </table>
 
-## An Overview
+## Bringing it all together
 
 After all of these components have been added, the plate to which all of these components have been attached will resemble the image shown below.
 
