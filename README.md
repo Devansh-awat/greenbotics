@@ -1,5 +1,4 @@
-<img src="other/readmephotos/logo.png" alt="Greenbotics 2025" width="300" align="center"/>
-
+<img src="other/readmephotos/logo.png" alt="Greenbotics 2025" width="300"/>
 
 # This Incredible Repository
 
@@ -457,9 +456,9 @@ After all of these components have been added, the plate to which all of these c
 
 <img src="other/readmephotos/FullCircuit2.jpeg" alt="Robot Circuit" width="200"/>
 
-A full wiring diagram is shown in the screenshot below, and available at models/PCB/~Untitled.kicad_sch.lck
+A full wiring diagram is shown in the screenshot below, and available at models/PCB/~Untitled.kicad_sch
 
-<img src="other/readmephotos/WiringDiagram.png" alt="Robot Circuit" width="200"/>
+<img src="other/readmephotos/WiringDiagram.png" alt="Robot Circuit" width="500"/>
 
 
 ---
