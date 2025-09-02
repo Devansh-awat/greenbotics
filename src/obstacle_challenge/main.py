@@ -17,7 +17,7 @@ from src.obstacle_challenge.utils import FPSCounter, SafetyMonitor
 # --- PARKING MANEUVER CONFIGURATION ---
 # ==============================================================================
 MANEUVER_SEQUENCE = [
-    {'type': 'drive', 'target_heading': 0.0, 'servo_angle': 0, 'unlimited_servo': False, 'drive_direction': 'reverse', 'speed': 60, 'duration_frames': 10},
+    {'type': 'drive', 'target_heading': 0.0, 'servo_angle': 0, 'unlimited_servo': False, 'drive_direction': 'reverse', 'speed': 60, 'duration_frames': 3},
     {'type': 'turn', 'target_heading': 45.0,  'servo_angle': 45, 'unlimited_servo': False, 'drive_direction': 'forward', 'speed': 80, 'duration_frames': 0},
     {'type': 'drive', 'target_heading': 45.0,   'servo_angle': 0,  'unlimited_servo': False, 'drive_direction': 'reverse', 'speed': 80, 'duration_frames': 40},
     {'type': 'turn', 'target_heading': 15.0,   'servo_angle': 60, 'unlimited_servo': True,  'drive_direction': 'reverse', 'speed': 80, 'duration_frames': 0},
@@ -209,7 +209,7 @@ if __name__ == "__main__":
                 print(f"INFO: Driving direction set to {driving_direction.upper()}")
                 if driving_direction=='counter-clockwise':
                     MANEUVER_SEQUENCE=[
-                    {'type': 'drive', 'target_heading': 0.0, 'servo_angle': 0, 'unlimited_servo': False, 'drive_direction': 'reverse', 'speed': 60, 'duration_frames': 11},
+                    {'type': 'drive', 'target_heading': 0.0, 'servo_angle': 0, 'unlimited_servo': False, 'drive_direction': 'reverse', 'speed': 60, 'duration_frames': 0},
                     {'type': 'turn', 'target_heading': -50.0,  'servo_angle': -45, 'unlimited_servo': False, 'drive_direction': 'forward', 'speed': 80, 'duration_frames': 0},
                     {'type': 'drive', 'target_heading': -50.0,   'servo_angle': 0,  'unlimited_servo': False, 'drive_direction': 'reverse', 'speed': 80, 'duration_frames': 37},
                     {'type': 'turn', 'target_heading': -15.0,   'servo_angle': -60, 'unlimited_servo': True,  'drive_direction': 'reverse', 'speed': 80, 'duration_frames': 0},
@@ -236,37 +236,73 @@ if __name__ == "__main__":
                 # starting from middle for testing
                 #current_state='DRIVING_STRAIGHT'
                 #turn_counter=4
+                #driving_direction='clockwise'
                 led.off()
-                time.sleep(0.5)
+                #time.sleep(0.5)
 
             elif current_state == "INITIAL_LEFT_TURN":
                 frames_in_state += 1
                 if frames_in_state == 1:
+                    maneuver_base_heading=INITIAL_HEADING
+                    # Set the target heading for a counter-clockwise turn
                     target_heading = (
                         INITIAL_HEADING - config.CCW_TURN_ANGLE + 360
                     ) % 360
                     motor.forward(config.DRIVE_SPEED)
+                
+                # Apply a left turn
                 servo.set_angle_unlimited(-60)
+
+                # Check if it's time to start the scan (same logic as the right turn)
                 if (
                     get_angular_difference(INITIAL_HEADING, current_yaw)
                     >= config.CCW_SCAN_ANGLE
                     and not scan_initiated
                 ):
                     scan_initiated = True
+                    print("--- Starting 5-second continuous scan ---")
                     motor.brake()
-                    time.sleep(0.5)
-                    scan_frame = camera.capture_frame()
-                    if scan_frame is not None:
-                        scan_block_data, _, _ = camera.find_biggest_block(scan_frame)
+                    
+                    # Start a 5-second timer
+                    scan_start_time = time.monotonic()
+                    scan_duration = 5.0
+
+                    # Loop for the duration, actively looking for a block
+                    while time.monotonic() - scan_start_time < scan_duration:
+                        # Capture a frame in every loop
+                        scan_frame = camera.capture_frame()
+                        if scan_frame is None:
+                            continue # Skip this loop iteration if frame is bad
+
+                        # Analyze the frame for a block
+                        scan_block_data, overlay_frame_scan, _ = camera.find_biggest_block(scan_frame)
+                        
+                        # Provide live visual feedback during the scan
+                        if not HEADLESS and overlay_frame_scan is not None:
+                            cv2.imshow(WINDOW_NAME, overlay_frame_scan)
+                            cv2.waitKey(1)
+
+                        # If a block is found, save its color and exit the scan loop immediately
                         if scan_block_data:
                             detected_block_color = scan_block_data["color"]
+                            print(f"Block found! Color: {detected_block_color}. Ending scan early.")
+                            break # Exit the 'while' loop
+                    
+                    # If the loop finished without finding a block, detected_block_color remains None
+                    if detected_block_color is None:
+                        print("Scan finished. No block was detected.")
+
+                    # Resume driving after the scan is complete (or was broken out of)
                     motor.forward(config.DRIVE_SPEED)
+                    
+                # Check if the full turn is complete after the scan has been attempted
                 if (
                     scan_initiated
                     and get_angular_difference(current_yaw, target_heading)
                     < config.HEADING_LOCK_TOLERANCE
                 ):
                     frames_in_state = 0
+                    # Transition to the correct states for the counter-clockwise path
                     if detected_block_color == "green":
                         current_state = "DRIVE_FORWARD_GREEN"
                     elif detected_block_color == "red":
@@ -280,7 +316,10 @@ if __name__ == "__main__":
                 motor.forward(config.DRIVE_SPEED)
                 if frames_in_state > config.CCW_NORMAL_DRIVE_FRAMES:
                     frames_in_state = 0
-                    current_state = "FINAL_RIGHT_TURN"
+                    target_heading = (
+                            maneuver_base_heading + config.MANEUVER_ANGLE_DEG+7 + 360
+                        ) % 360
+                    current_state = "MANEUVER_TURN_2"
 
             elif current_state == "DRIVE_FORWARD_NONE":
                 frames_in_state += 1
@@ -443,7 +482,7 @@ if __name__ == "__main__":
                         ) % 360
                         elif maneuver_color=='green' and driving_direction=='clockwise':
                             target_heading = (
-                            maneuver_base_heading - config.MANEUVER_ANGLE_DEG+10 + 360
+                            maneuver_base_heading - config.MANEUVER_ANGLE_DEG+15 + 360
                         ) % 360
                     current_state = "MANEUVER_TURN_1"
                 # Determine if this is the final leg of the obstacle course.
@@ -483,9 +522,12 @@ if __name__ == "__main__":
             elif current_state == "MANEUVER_TURN_1":
                 frames_in_state += 1
                 x=35
-                if (turn_counter==4 or turn_counter==8) and maneuver_color=='red':
+                if (turn_counter==4 or turn_counter==8) and maneuver_color=='red' and driving_direction=='counter-clockwise':
                     x=45
-                steer_with_gyro(target_heading, current_yaw,-29,x)
+                y=-29
+                if (turn_counter==4 or turn_counter==8) and maneuver_color=='green' and driving_direction=='clockwise': 
+                    y=-45
+                steer_with_gyro(target_heading, current_yaw,y,x)
                 motor.forward(config.DRIVE_SPEED)
                 if (
                     frames_in_state > config.MIN_FRAMES_IN_TURN
@@ -517,7 +559,7 @@ if __name__ == "__main__":
                     if frames_in_state > drive_duration:
                         if maneuver_color == "red":
                             target_heading = (
-                                maneuver_base_heading - config.MANEUVER_ANGLE_DEG+5 + 360
+                                maneuver_base_heading - config.MANEUVER_ANGLE_DEG + 360
                             ) % 360
                         if (turn_counter==4 or turn_counter==8) and maneuver_color=='red' and driving_direction=='counter-clockwise':
                             target_heading = (
@@ -530,7 +572,7 @@ if __name__ == "__main__":
             elif current_state == "MANEUVER_TURN_2":
                 x=37
                 y=-32
-                if (turn_counter==4 or turn_counter==8) and maneuver_color=='red':
+                if (turn_counter==4 or turn_counter==8) and maneuver_color=='red' and driving_direction=='counter-clockwise':
                     x=45
                 if maneuver_color=='red':
                     y=-28
@@ -607,10 +649,10 @@ if __name__ == "__main__":
 
             elif current_state == "MANEUVER_TURN_4":
                 frames_in_state += 1
-                x=25
-                if (turn_counter==4 or turn_counter==8)and maneuver_color=='red':
+                x=35
+                if (turn_counter==4 or turn_counter==8)and maneuver_color=='red' and driving_direction=='counter-clockwise':
                     x=45
-                steer_with_gyro(target_heading, current_yaw,-25,x)
+                steer_with_gyro(target_heading, current_yaw,-20,x)
                 motor.forward(config.DRIVE_SPEED)
                 if (
                     get_angular_difference(current_yaw, target_heading)
@@ -623,9 +665,9 @@ if __name__ == "__main__":
                 frames_in_state += 1
                 if frames_in_state == 1:
                     if driving_direction == "counter-clockwise":
-                        target_heading = (target_heading - 90+0.25 + 360) % 360
+                        target_heading = (target_heading - 90+0.35 + 360) % 360
                     else:
-                        target_heading = (target_heading + 90+0.25 + 360) % 360
+                        target_heading = (target_heading + 90-0.25 + 360) % 360
                 servo_angle = -45 if driving_direction == "clockwise" else 45
                 servo.set_angle(servo_angle)
                 motor.reverse(config.DRIVE_SPEED)
