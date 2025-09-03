@@ -38,7 +38,7 @@ def initialize():
         try:
             sensor_obj = adafruit_vl53l1x.VL53L1X(mux[i])
             sensor_obj.distance_mode = 1
-            sensor_obj.timing_budget = 50
+            sensor_obj.timing_budget = 100
             sensor_obj.start_ranging()
             sensors[i] = sensor_obj
             last_known_distances[i] = None
@@ -67,7 +67,7 @@ def get_distance(channel):
                 distance_cm = sensor.distance
                 sensor.clear_interrupt()
 
-                if distance_cm is None or distance_cm == 0.0:
+                if distance_cm is None or distance_cm == 0.0 or distance_cm>100:
                     last_known_distances[channel] = None
                     return None
 

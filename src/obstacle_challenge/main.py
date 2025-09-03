@@ -7,7 +7,7 @@ from gpiozero import Button, LED
 import os
 from datetime import datetime
 
-from src.obstacle_challenge import config
+from src.obstacle_challenge import config, neopixel
 from src.motors import motor, servo
 from src.sensors import camera, bno055, vl53l1x
 from src.obstacle_challenge.utils import FPSCounter, SafetyMonitor
@@ -17,11 +17,11 @@ from src.obstacle_challenge.utils import FPSCounter, SafetyMonitor
 # --- PARKING MANEUVER CONFIGURATION FOR CLOCKWISE DIRECTION---
 # ==============================================================================
 MANEUVER_SEQUENCE = [
-    {'type': 'drive', 'target_heading': 0.0, 'servo_angle': 0, 'unlimited_servo': False, 'drive_direction': 'reverse', 'speed': 60, 'duration_frames': 10},
+    {'type': 'drive', 'target_heading': 0.0, 'servo_angle': 0, 'unlimited_servo': False, 'drive_direction': 'reverse', 'speed': 60, 'duration_frames': 20},
     {'type': 'turn', 'target_heading': 45.0,  'servo_angle': 45, 'unlimited_servo': False, 'drive_direction': 'forward', 'speed': 80, 'duration_frames': 0},
-    {'type': 'drive', 'target_heading': 45.0,   'servo_angle': 0,  'unlimited_servo': False, 'drive_direction': 'reverse', 'speed': 80, 'duration_frames': 40},
+    {'type': 'drive', 'target_heading': 45.0,   'servo_angle': 0,  'unlimited_servo': False, 'drive_direction': 'reverse', 'speed': 80, 'duration_frames': 50},
     {'type': 'turn', 'target_heading': 15.0,   'servo_angle': 60, 'unlimited_servo': True,  'drive_direction': 'reverse', 'speed': 80, 'duration_frames': 0},
-    {'type': 'turn', 'target_heading': 0.0,   'servo_angle': -40,  'unlimited_servo': False, 'drive_direction': 'forward', 'speed': 90, 'duration_frames': 0},
+    {'type': 'turn', 'target_heading': 5.0,   'servo_angle': -40,  'unlimited_servo': False, 'drive_direction': 'forward', 'speed': 90, 'duration_frames': 0},
 ]
 # ==============================================================================
 
@@ -105,6 +105,7 @@ def initialize_all():
     print("--- Initializing All Systems ---")
     button = Button(BUTTON_PIN)
     led = LED(12)
+    neopixel.init()
     if not all(
         [
             motor.initialize(),
@@ -130,6 +131,7 @@ def cleanup_all():
     camera.cleanup()
     bno055.cleanup()
     vl53l1x.cleanup()
+    neopixel.cleanup()
     global video_writer, video_path
     if video_writer is not None:
         video_writer.release()
@@ -211,7 +213,7 @@ if __name__ == "__main__":
                     MANEUVER_SEQUENCE=[
                     {'type': 'drive', 'target_heading': 0.0, 'servo_angle': 0, 'unlimited_servo': False, 'drive_direction': 'reverse', 'speed': 60, 'duration_frames': 5},
                     {'type': 'turn', 'target_heading': -50.0,  'servo_angle': -45, 'unlimited_servo': False, 'drive_direction': 'forward', 'speed': 80, 'duration_frames': 0},
-                    {'type': 'drive', 'target_heading': -50.0,   'servo_angle': 0,  'unlimited_servo': False, 'drive_direction': 'reverse', 'speed': 80, 'duration_frames': 37},
+                    {'type': 'drive', 'target_heading': -50.0,   'servo_angle': 0,  'unlimited_servo': False, 'drive_direction': 'reverse', 'speed': 80, 'duration_frames': 45},
                     {'type': 'turn', 'target_heading': -15.0,   'servo_angle': -60, 'unlimited_servo': True,  'drive_direction': 'reverse', 'speed': 80, 'duration_frames': 0},
                     {'type': 'turn', 'target_heading': -10.0,   'servo_angle': 60,  'unlimited_servo': True, 'drive_direction': 'forward', 'speed': 90, 'duration_frames': 0},
                     {'type': 'drive', 'target_heading': 0.0, 'servo_angle': 0, 'unlimited_servo': False, 'drive_direction': 'reverse', 'speed': 60, 'duration_frames': 10},
@@ -234,6 +236,7 @@ if __name__ == "__main__":
                     if driving_direction == "clockwise"
                     else "INITIAL_LEFT_TURN"
                 )
+                neopixel.solid(250,250,255)
                 # starting from middle for testing
                 #current_state='DRIVING_STRAIGHT'
                 #turn_counter=4
@@ -502,12 +505,11 @@ if __name__ == "__main__":
                 else:
                     # On normal laps, use the standard cornering threshold.
                     wall_detection_threshold = config.TOF_CORNERING_THRESHOLD_MM
-                    x=100
                     if driving_direction == "counter-clockwise":
                         wall_detection_threshold -= 100
 
                 # Check if the robot has reached the wall using the chosen threshold.
-                if (look_for_wall and forward_dist is not None and x<forward_dist < wall_detection_threshold)and frames_in_state>25:
+                if (look_for_wall and forward_dist is not None and forward_dist < wall_detection_threshold)and frames_in_state>25:
                     
                     # If the wall is detected, decide what to do next based on the lap.
                     if is_final_leg:
@@ -671,7 +673,7 @@ if __name__ == "__main__":
                 frames_in_state += 1
                 if frames_in_state == 1:
                     if driving_direction == "counter-clockwise":
-                        target_heading = (target_heading - 90+0.25 + 360) % 360
+                        target_heading = (target_heading - 90+0.55 + 360) % 360
                     else:
                         target_heading = (target_heading + 90-0.25 + 360) % 360
                 servo_angle = -45 if driving_direction == "clockwise" else 45
