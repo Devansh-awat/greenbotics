@@ -1,5 +1,6 @@
 Video
 ====
 
-This directory must contain the video.md file with a URL to YouTube (should be either public or accessible by link) showing the vehicle driving autonomously.
-That part of the video where driving demonstration exists must be at least 30 seconds in length.
+This directory contains the video.md file with a URL to the YouTube video showing the vehicle driving autonomously.
+
+[!["Video To Our Robot"](../other/readmephotos/Thumbnail.gif)](https://youtu.be/tl9SpU311F4)

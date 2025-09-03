@@ -1,4 +1,12 @@
 Team's photos
 ====
 
-This directory must contain 2 photos of the team (an official one and one funny photo with all team members)
+This directory contains photos of our team
+
+The official one !
+![GreenboticsTeamPic](GreenboticsTeamPic.jpeg)
+
+
+
+The funny one :)
+![GreenboticsClowns](GreenboticsClowns.jpeg)
