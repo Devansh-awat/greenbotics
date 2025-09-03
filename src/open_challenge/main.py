@@ -70,6 +70,7 @@ locked_turn_direction = None
 target_heading = bno055.get_heading()
 final_run_end_time = 0
 frames_in_state = 0
+kp=config.KP
 fps_counter = FPSCounter().start()
 
 start_time = time.monotonic()
@@ -100,6 +101,7 @@ try:
             if dist_left is not None and dist_left < config.START_CLOSE_WALL_THRESHOLD:
                 locked_turn_direction = "left"
                 print(f"\nINFO: Start too close to LEFT wall. Immediately following.")
+                kp=0.05
                 current_state = "WALL_FOLLOWING"
             elif (
                 dist_right is not None
@@ -107,6 +109,7 @@ try:
             ):
                 locked_turn_direction = "right"
                 print(f"\nINFO: Start too close to RIGHT wall. Immediately following.")
+                kp=0.05
                 current_state = "WALL_FOLLOWING"
             elif dist_left is None:
                 locked_turn_direction = "left"
@@ -129,7 +132,7 @@ try:
             if locked_turn_direction == "left":
                 if dist_left is not None:
                     error = dist_left - config.TARGET_DISTANCE
-                    steer_angle = -error * config.KP
+                    steer_angle = -error * kp
                     servo.set_angle(steer_angle)
 
                     print(
@@ -141,7 +144,7 @@ try:
             elif locked_turn_direction == "right":
                 if dist_right is not None:
                     error = dist_right - config.TARGET_DISTANCE
-                    steer_angle = error * config.KP
+                    steer_angle = error * kp
                     servo.set_angle(steer_angle)
 
                     print(
@@ -157,6 +160,7 @@ try:
                 current_state = "PERFORMING_TURN"
 
         elif current_state == "PERFORMING_TURN":
+            kp=config.KP
             frames_in_state += 1
             if frames_in_state == 1:
                 if locked_turn_direction == "left":
@@ -220,12 +224,12 @@ try:
                 error = (
                     dist_left - config.TARGET_DISTANCE if dist_left is not None else 0
                 )
-                servo.set_angle(-error * config.KP)
+                servo.set_angle(-error * kp)
             else:
                 error = (
                     dist_right - config.TARGET_DISTANCE if dist_right is not None else 0
                 )
-                servo.set_angle(error * config.KP)
+                servo.set_angle(error * kp)
 
             remaining_time = final_run_end_time - time.time()
             print(

@@ -14,10 +14,10 @@ from src.obstacle_challenge.utils import FPSCounter, SafetyMonitor
 
 
 # ==============================================================================
-# --- PARKING MANEUVER CONFIGURATION ---
+# --- PARKING MANEUVER CONFIGURATION FOR CLOCKWISE DIRECTION---
 # ==============================================================================
 MANEUVER_SEQUENCE = [
-    {'type': 'drive', 'target_heading': 0.0, 'servo_angle': 0, 'unlimited_servo': False, 'drive_direction': 'reverse', 'speed': 60, 'duration_frames': 3},
+    {'type': 'drive', 'target_heading': 0.0, 'servo_angle': 0, 'unlimited_servo': False, 'drive_direction': 'reverse', 'speed': 60, 'duration_frames': 10},
     {'type': 'turn', 'target_heading': 45.0,  'servo_angle': 45, 'unlimited_servo': False, 'drive_direction': 'forward', 'speed': 80, 'duration_frames': 0},
     {'type': 'drive', 'target_heading': 45.0,   'servo_angle': 0,  'unlimited_servo': False, 'drive_direction': 'reverse', 'speed': 80, 'duration_frames': 40},
     {'type': 'turn', 'target_heading': 15.0,   'servo_angle': 60, 'unlimited_servo': True,  'drive_direction': 'reverse', 'speed': 80, 'duration_frames': 0},
@@ -209,11 +209,12 @@ if __name__ == "__main__":
                 print(f"INFO: Driving direction set to {driving_direction.upper()}")
                 if driving_direction=='counter-clockwise':
                     MANEUVER_SEQUENCE=[
-                    {'type': 'drive', 'target_heading': 0.0, 'servo_angle': 0, 'unlimited_servo': False, 'drive_direction': 'reverse', 'speed': 60, 'duration_frames': 0},
+                    {'type': 'drive', 'target_heading': 0.0, 'servo_angle': 0, 'unlimited_servo': False, 'drive_direction': 'reverse', 'speed': 60, 'duration_frames': 5},
                     {'type': 'turn', 'target_heading': -50.0,  'servo_angle': -45, 'unlimited_servo': False, 'drive_direction': 'forward', 'speed': 80, 'duration_frames': 0},
                     {'type': 'drive', 'target_heading': -50.0,   'servo_angle': 0,  'unlimited_servo': False, 'drive_direction': 'reverse', 'speed': 80, 'duration_frames': 37},
                     {'type': 'turn', 'target_heading': -15.0,   'servo_angle': -60, 'unlimited_servo': True,  'drive_direction': 'reverse', 'speed': 80, 'duration_frames': 0},
-                    {'type': 'turn', 'target_heading': -5.0,   'servo_angle': 60,  'unlimited_servo': True, 'drive_direction': 'forward', 'speed': 90, 'duration_frames': 0},
+                    {'type': 'turn', 'target_heading': -10.0,   'servo_angle': 60,  'unlimited_servo': True, 'drive_direction': 'forward', 'speed': 90, 'duration_frames': 0},
+                    {'type': 'drive', 'target_heading': 0.0, 'servo_angle': 0, 'unlimited_servo': False, 'drive_direction': 'reverse', 'speed': 60, 'duration_frames': 10},
                     ]
                 new_heading = bno055.get_heading()
                 if new_heading is not None:
@@ -226,7 +227,7 @@ if __name__ == "__main__":
                 if config.GYRO_ENABLED:
                     print("--- Starting Safety Monitor ---")
                     safety_monitor = SafetyMonitor(bno055.sensor, TILT_THRESHOLD_DEGREES)
-                
+                #time.sleep(10)
                 start_time = time.monotonic()
                 current_state = (
                     "INITIAL_RIGHT_TURN_CW"
@@ -238,7 +239,6 @@ if __name__ == "__main__":
                 #turn_counter=4
                 #driving_direction='clockwise'
                 led.off()
-                #time.sleep(0.5)
 
             elif current_state == "INITIAL_LEFT_TURN":
                 frames_in_state += 1
@@ -420,7 +420,10 @@ if __name__ == "__main__":
                 motor.forward(config.DRIVE_SPEED)
                 if frames_in_state > config.CW_DRIVE_FORWARD_RED_FRAMES:
                     frames_in_state = 0
-                    current_state = "FINAL_LEFT_TURN_CW"
+                    target_heading = (
+                            maneuver_base_heading - config.MANEUVER_ANGLE_DEG-7 + 360
+                        ) % 360
+                    current_state = "MANEUVER_TURN_2"
 
             elif current_state == "DRIVE_FORWARD_NONE_CW":
                 frames_in_state += 1
@@ -459,10 +462,13 @@ if __name__ == "__main__":
                 forward_dist = vl53l1x.get_distance(config.TOF_FORWARD_SENSOR_CHANNEL)
                 look_for_block = blocks_passed_this_lap < 2
                 look_for_wall = blocks_passed_this_lap > 0
+                min_block_area=config.MIN_BLOCK_AREA_FOR_ACTION
+                if (turn_counter==4 or turn_counter==8) and maneuver_color=='red' and driving_direction=='counter-clockwise':
+                    min_block_area-=1500 
                 if (
                     look_for_block
                     and block_data
-                    and block_data["area"] > config.MIN_BLOCK_AREA_FOR_ACTION
+                    and block_data["area"] > min_block_area
                 ):
                     maneuver_color = block_data["color"]
                     maneuver_base_heading = target_heading
@@ -559,7 +565,7 @@ if __name__ == "__main__":
                     if frames_in_state > drive_duration:
                         if maneuver_color == "red":
                             target_heading = (
-                                maneuver_base_heading - config.MANEUVER_ANGLE_DEG + 360
+                                maneuver_base_heading - config.MANEUVER_ANGLE_DEG-10 + 360
                             ) % 360
                         if (turn_counter==4 or turn_counter==8) and maneuver_color=='red' and driving_direction=='counter-clockwise':
                             target_heading = (
@@ -665,7 +671,7 @@ if __name__ == "__main__":
                 frames_in_state += 1
                 if frames_in_state == 1:
                     if driving_direction == "counter-clockwise":
-                        target_heading = (target_heading - 90+0.35 + 360) % 360
+                        target_heading = (target_heading - 90+0.25 + 360) % 360
                     else:
                         target_heading = (target_heading + 90-0.25 + 360) % 360
                 servo_angle = -45 if driving_direction == "clockwise" else 45
