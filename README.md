@@ -79,7 +79,7 @@ Having spent a lot of time working on LEGO-based hardware in the 2024 season, we
 
 This video shows robot's construction, open challenge run as well as obstacle challenge run.
 
-| [<img src="other/readmephotos/Thumbnail.gif" alt="Robot Video" />](https://youtu.be/55lUwe3Zd6s) | <img src="other/readmephotos/YoutubeQR.svg" alt="YoutubeQR" style="zoom:10%;" /> <br />Scan QR code to open in YouTube |
+| [<img src="other/readmephotos/Thumbnail.gif" alt="Robot Video" />](https://www.youtube.com/watch?v=yn76rDG4Hm4) | <img src="other/readmephotos/YoutubeQR.svg" alt="YoutubeQR" style="zoom:10%;" /> <br />Scan QR code to open in YouTube |
 | ------------------------------------------------------------ | ------------------------------------------------------------ |
 
 
