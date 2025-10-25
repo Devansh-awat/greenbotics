@@ -17,7 +17,7 @@ from src.obstacle_challenge.utils import FPSCounter, SafetyMonitor
 # --- PARKING MANEUVER CONFIGURATION FOR CLOCKWISE DIRECTION---
 # ==============================================================================
 MANEUVER_SEQUENCE = [
-    {'type': 'drive', 'target_heading': 0.0, 'servo_angle': 0, 'unlimited_servo': False, 'drive_direction': 'reverse', 'speed': 60, 'duration_frames': 20},
+    {'type': 'drive', 'target_heading': 0.0, 'servo_angle': 0, 'unlimited_servo': False, 'drive_direction': 'reverse', 'speed': 60, 'duration_frames': 45},
     {'type': 'turn', 'target_heading': 45.0,  'servo_angle': 45, 'unlimited_servo': False, 'drive_direction': 'forward', 'speed': 80, 'duration_frames': 0},
     {'type': 'drive', 'target_heading': 45.0,   'servo_angle': 0,  'unlimited_servo': False, 'drive_direction': 'reverse', 'speed': 80, 'duration_frames': 50},
     {'type': 'turn', 'target_heading': 15.0,   'servo_angle': 60, 'unlimited_servo': True,  'drive_direction': 'reverse', 'speed': 80, 'duration_frames': 0},
@@ -30,9 +30,9 @@ TILT_THRESHOLD_DEGREES = 15.0
 BUTTON_PIN = 23
 WALL_APPROACH_THRESHOLD_MM = 100
 POSITIONING_DRIVE_FRAMES = 100
-SCAN_THRESHOLD_MM = 100
+SCAN_THRESHOLD_MM = 140
 FRONT_SENSOR_CHANNEL = 1
-LEFT_SENSOR_CHANNEL = 0
+LEFT_SENSOR_CHANNEL = 3
 PARKING_DRIVE_SPEED = 80
 PARKING_HEADING_LOCK_TOLERANCE = 5.0
 
@@ -218,6 +218,7 @@ if __name__ == "__main__":
                     {'type': 'turn', 'target_heading': -10.0,   'servo_angle': 60,  'unlimited_servo': True, 'drive_direction': 'forward', 'speed': 90, 'duration_frames': 0},
                     {'type': 'drive', 'target_heading': 0.0, 'servo_angle': 0, 'unlimited_servo': False, 'drive_direction': 'reverse', 'speed': 60, 'duration_frames': 10},
                     ]
+                    POSITIONING_DRIVE_FRAMES=200
                 new_heading = bno055.get_heading()
                 if new_heading is not None:
                     INITIAL_HEADING = new_heading
@@ -240,7 +241,8 @@ if __name__ == "__main__":
                 # starting from middle for testing
                 #current_state='DRIVING_STRAIGHT'
                 #turn_counter=4
-                #driving_direction='clockwise'
+                #driving_direction='counter-clockwise'
+                
                 led.off()
 
             elif current_state == "INITIAL_LEFT_TURN":
@@ -350,7 +352,7 @@ if __name__ == "__main__":
                     get_angular_difference(current_yaw, target_heading)
                     < config.HEADING_LOCK_TOLERANCE
                 ):
-                    blocks_passed_this_lap = 1
+                    blocks_passed_this_lap = 2
                     frames_in_state = 0
                     current_state = "DRIVING_STRAIGHT"
 
@@ -467,7 +469,7 @@ if __name__ == "__main__":
                 look_for_wall = blocks_passed_this_lap > 0
                 min_block_area=config.MIN_BLOCK_AREA_FOR_ACTION
                 if (turn_counter==4 or turn_counter==8) and maneuver_color=='red' and driving_direction=='counter-clockwise':
-                    min_block_area-=1500 
+                    min_block_area+=1500 
                 if (
                     look_for_block
                     and block_data
@@ -673,9 +675,9 @@ if __name__ == "__main__":
                 frames_in_state += 1
                 if frames_in_state == 1:
                     if driving_direction == "counter-clockwise":
-                        target_heading = (target_heading - 90+0.55 + 360) % 360
+                        target_heading = (target_heading - 90+0.15 + 360) % 360
                     else:
-                        target_heading = (target_heading + 90-0.25 + 360) % 360
+                        target_heading = (target_heading + 90-0.35 + 360) % 360
                 servo_angle = -45 if driving_direction == "clockwise" else 45
                 servo.set_angle(servo_angle)
                 motor.reverse(config.DRIVE_SPEED)
@@ -734,7 +736,7 @@ if __name__ == "__main__":
 
             elif current_state == "DRIVE_FORWARD_POSITIONING":
                 frames_in_state += 1
-                x=10
+                x=2
                 if driving_direction=='clockwise':
                     x=-3
                 steer_with_gyro(target_heading+x, current_yaw)
@@ -746,6 +748,7 @@ if __name__ == "__main__":
                     print(f"\n[STATE CHANGE] ==> {current_state}")
 
             elif current_state == "WAITING_FOR_SCAN":
+                frames_in_state+=1
                 steer_with_gyro(target_heading, current_yaw)
                 motor.forward(50)
                 if driving_direction=='clockwise':
@@ -760,6 +763,8 @@ if __name__ == "__main__":
                     time.sleep(0.5)
                     maneuver_base_heading = target_heading
                     current_state = "RUNNING_MANEUVER"
+                if frames_in_state>200:
+                    current_state='MISSION_COMPLETE'
 
             elif current_state == "RUNNING_MANEUVER":
                 if stage_index >= len(MANEUVER_SEQUENCE):
