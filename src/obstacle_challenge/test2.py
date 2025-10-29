@@ -2,61 +2,61 @@ from collections import deque
 import time
 from src.obstacle_challenge.config import LOWER_RED_1, UPPER_RED_1, LOWER_RED_2, UPPER_RED_2, LOWER_GREEN, UPPER_GREEN
 from src.obstacle_challenge.main import get_angular_difference
-from src.sensors import bno055, camera, vl53l1x
+from src.sensors import bno055, camera, distance
 from src.motors import motor, servo
 import numpy as np
 import cv2
 import cProfile
 import threading
 from gpiozero import Button
-MOTOR_SPEED = 100
-orange_detection_history = deque(maxlen=15)
+MOTOR_SPEED = 75
+orange_detection_history = deque(maxlen=30)
 turn_counter=0
 profiler = cProfile.Profile()
 
 fourcc = cv2.VideoWriter_fourcc(*'avc1')
-out = cv2.VideoWriter('recording.mp4', fourcc, 20, (960, 520))
+out = cv2.VideoWriter('recording.mp4', fourcc, 60, (640, 360))
 
 camera.initialize()
 motor.initialize()
 servo.initialize()
-vl53l1x.initialize()
+distance.initialise()
 bno055.initialize()
 button = Button(23)
 angle=0
 prevangle=0
-FRAME_WIDTH = 960
-FRAME_HEIGHT = 520
+FRAME_WIDTH = 640
+FRAME_HEIGHT = 360
 FRAME_MIDPOINT_X = FRAME_WIDTH // 2
 
 LOWER_BLACK = np.array([0, 0, 0])
-UPPER_BLACK = np.array([180, 255, 120])
-LOWER_ORANGE = np.array([10, 100, 20])
-UPPER_ORANGE = np.array([25, 255, 255])
+UPPER_BLACK = np.array([180, 255, 50])
+LOWER_ORANGE = np.array([6, 70, 20])
+UPPER_ORANGE = np.array([26, 255, 255])
 detection_params = {'min_area': 300, 'return_rule': 'biggest_in_job', 'return_mask': True}
 
-left_roi_x = 70
-left_roi_y = 30
+left_roi_x = 0
+left_roi_y = 50
 left_roi_w = 100
-left_roi_h = 100
+left_roi_h = 200
 
-right_roi_x = 790
-right_roi_y = 30
+right_roi_x = 540
+right_roi_y = 50
 right_roi_w = 100
-right_roi_h = 100
+right_roi_h = 200
 
-inner_left_roi_x = 70
-inner_left_roi_y = 140
+inner_left_roi_x = 120
+inner_left_roi_y = 160
 inner_left_roi_w = 100
 inner_left_roi_h = 100
 
-inner_right_roi_x = 790
-inner_right_roi_y = 140
+inner_right_roi_x = 420
+inner_right_roi_y = 200
 inner_right_roi_w = 100
 inner_right_roi_h = 100
 
-orange_roi_x = 440 
-orange_roi_y = 120
+orange_roi_x = 280 
+orange_roi_y = 160
 orange_roi_w = 80
 orange_roi_h = 20
 
@@ -66,7 +66,7 @@ inner_left_side_job = {'roi': (inner_left_roi_x, inner_left_roi_y, inner_left_ro
 inner_right_side_job = {'roi': (inner_right_roi_x, inner_right_roi_y, inner_right_roi_w, inner_right_roi_h), 'type': 'wall_inner_right', 'colors': [{'name': 'black', 'lower': LOWER_BLACK, 'upper': UPPER_BLACK}], 'params': detection_params}
 detection_jobs = [left_side_job, right_side_job, inner_left_side_job, inner_right_side_job]
 
-full_frame_roi = (0, 20, 940, 300)
+full_frame_roi = (0, 20, 640, 200)
 color_detection_job = [{
     'roi': full_frame_roi,
     'type': 'block',
@@ -78,7 +78,7 @@ color_detection_job = [{
     'params': {
         'return_rule': 'biggest_in_job',
         'return_mask': True,
-        'min_area': 1000
+        'min_area': 500
     },
     },
     {'roi': (300,0,1,1),
@@ -230,8 +230,8 @@ def create_dashboard_view_grid(main_feed, masks):
 
 camera_thread = CameraThread(camera)
 camera_thread.start()
-dist_left = vl53l1x.get_distance(3)
-dist_right = vl53l1x.get_distance(2)
+dist_left = distance.get_distance(3)
+dist_right = distance.get_distance(2)
 print(dist_left,dist_right)
 driving_direction = "clockwise"
 if dist_left is not None and dist_right is not None:
@@ -263,14 +263,15 @@ try:
         frame = camera_thread.get_frame()
         if frame is None:
             continue
-        frame = frame[426:946, 164:1124]
-        frame = cv2.GaussianBlur(frame,(7,7),0)
+        #frame = frame[426:946, 164:1124]
+        frame = cv2.GaussianBlur(frame,(1,7),0)
         #frame = cv2.bilateralFilter(frame, d=9, sigmaColor=75, sigmaSpace=75)
+        annotated_frame = frame
         frame = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-        h, s, v = cv2.split(frame)
-        s = np.clip(s*1.5,0,255).astype(np.uint8)
-        v = np.clip(v*1.5,0,255).astype(np.uint8)
-        frame = cv2.merge((h,s,v))
+        #h, s, v = cv2.split(frame)
+        #s = np.clip(s*1.5,0,255).astype(np.uint8)
+        #v = np.clip(v*1.5,0,255).astype(np.uint8)
+        #frame = cv2.merge((h,s,v))
         
         mask_black = cv2.inRange(frame, LOWER_BLACK, UPPER_BLACK)
         mask_red1 = cv2.inRange(frame, LOWER_RED_1, UPPER_RED_1)
@@ -436,7 +437,6 @@ try:
                     turn_counter += 1
                     # You can add a print statement to verify it's working
                     print(f"Orange detected after a gap. Turn counter is now: {turn_counter}")
-        annotated_frame = frame 
         if detected_blocks:
             for block in detected_blocks:
                 if block['type'] == 'close_block':
@@ -454,38 +454,64 @@ try:
                 block_color = block['color']
                 block_x = block['centroid'][0]
                 block_y = block['centroid'][1]
-                if 200<block_x<760:
+                debug.append((block_x, block_y))
+                if 0<block_x<960:
                     if block_color == 'red':
                         wall_inner_right_size = 0
                         for obj in detected_walls:
                             if obj['type'] == 'wall_inner_right':
                                 wall_inner_right_size = obj['area']
-                        angle = ((block_x - (480-150)) * 0.05)+8
+                        target=150
+                        if block_y>130 and 240<block_x<400:
+                            target=300 
+                        debug.append(target)
+                        angle = ((block_x - (320-target)) * 0.10)+8
+                        #if angle <0:
+                        #    angle*=3
                         if wall_inner_right_size > 3000:
-                            angle = np.clip(angle,-25,0)
+                            angle = np.clip(angle,-45,-5)
                         else:
-                            angle = np.clip(angle,-25,25)
+                            angle = np.clip(angle,-45,45)
                     elif block_color == 'green':
                         wall_inner_left_size = 0
                         for obj in detected_walls:
                             if obj['type'] == 'wall_inner_left':
-                                wall_inner_left_size = obj['area']
-                        angle = ((block_x - (480+150)) * 0.15) + 5
+                                wall_inner_left_size = obj['area'] 
+                        target=100
+                        if block_y>140 and 240<block_x<400:
+                            target=200                       
+                        angle = ((block_x - (320+target)) * 0.12) + 8
                         if wall_inner_left_size > 3000:
-                            angle = np.clip(angle,0,25)
+                            angle = np.clip(angle,15,45)
                         else:
-                            angle = np.clip(angle,-25,25)
+                            angle = np.clip(angle,-45,20)
         else:
             left_pixel_size = 0
             right_pixel_size = 0
+            wall_inner_left_size = 0
+            wall_inner_right_size = 0
+            left_distance = 0
+            right_distance = 0
             for obj in detected_walls:
                 if obj['type'] == 'wall_left':
                     left_pixel_size = obj['area']
                 elif obj['type'] == 'wall_right':
                     right_pixel_size = obj['area']
-            else:
-                angle=((left_pixel_size-right_pixel_size)*0.003)+5
-        annotated_frame = cv2.cvtColor(annotated_frame, cv2.COLOR_HSV2BGR)
+                elif obj['type'] == 'wall_inner_right':
+                    wall_inner_right_size = obj['area']
+                elif obj['type'] == 'wall_inner_left':
+                        wall_inner_left_size = obj['area']
+            #if (left_pixel_size+wall_inner_left_size)-(right_pixel_size+wall_inner_right_size)<2000:
+            left_distance = distance.get_distance(0)
+            right_distance = distance.get_distance(3)
+            print(left_distance,right_distance)
+            if left_distance is not None and left_distance > 1000:
+                right_pixel_size += 10000
+            elif right_distance is not None and right_distance>1000:
+                left_pixel_size += 10000
+            debug.append(left_pixel_size)
+            debug.append(right_pixel_size)
+            angle=(((left_pixel_size+wall_inner_left_size)-(right_pixel_size+wall_inner_right_size))*0.004)+5
         for wall in detected_walls:
             contour = wall['contour']
             area = wall['area']
@@ -521,17 +547,19 @@ try:
                 text = f"Orange: {area}"
                 text_pos = (centroid[0] - 25, centroid[1])
                 cv2.putText(annotated_frame, text, text_pos, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
-        
-        debug.append(angle)
+        cv2.rectangle(annotated_frame,(left_roi_x,left_roi_y),(left_roi_x+left_roi_w,left_roi_y+left_roi_h),(0, 255, 255), 2)
+        debug.append(round(angle))
+        debug.append(turn_counter)
         info=str(debug)
-        cv2.putText(annotated_frame,info,(300,50),cv2.FONT_HERSHEY_COMPLEX,1,(0,0,255))
+        cv2.putText(annotated_frame,info,(100,50),cv2.FONT_HERSHEY_COMPLEX,1,(0,0,255))
         x, y, w, h = color_detection_job[1]['roi']
         cv2.rectangle(annotated_frame, (x, y), (x + w, y + h), (0, 255, 255), 2)
         out.write(annotated_frame)
         #angle = np.clip(angle, -30,40)
-        #angle=np.clip(angle,prevangle-5, prevangle+5)
+        angle=np.clip(angle,prevangle-10, prevangle+10)
         servo.set_angle(angle)
         prevangle=angle
+        angle = 0
         if False:
             cv2.imshow("Robot Live Feed", annotated_frame)
             if cv2.waitKey(1) & 0xFF == ord('q'):
@@ -549,4 +577,5 @@ finally:
     servo.set_angle(0)
     servo.cleanup()
     motor.cleanup()
+    distance.cleanup()
     cv2.destroyAllWindows()

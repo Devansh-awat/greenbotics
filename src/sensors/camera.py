@@ -29,11 +29,16 @@ def initialize():
         cam_config = picam2.create_preview_configuration(
             main={
                 "format": "RGB888",
-                "size": (2028, 1520),
+                "size": (2304, 1296),
             },
-            lores={"size": (1280, 960), "format": "RGB888"},
+            lores={"size": (640, 360), "format": "RGB888"},
 
-            controls={"FrameRate": 56},
+            controls={
+                        #"AeEnable": False,
+                        "ExposureTime": 9000,
+                        #"AnalogueGain": 8.0,
+                        "FrameRate": 56,
+                    }
         )
         picam2.configure(cam_config)
         picam2.start()

@@ -37,12 +37,12 @@ CW_DRIVE_FORWARD_RED_FRAMES = 25
 CW_REVERSE_GREEN_FRAMES = 15
 CW_DRIVE_FORWARD_NONE_FRAMES = 0
 
-LOWER_RED_1 = np.array([0, 150, 40])
+LOWER_RED_1 = np.array([0, 100, 55])
 UPPER_RED_1 = np.array([5, 255, 255])
-LOWER_RED_2 = np.array([175, 150, 40])
+LOWER_RED_2 = np.array([175, 100, 55])
 UPPER_RED_2 = np.array([180, 255, 255])
-LOWER_GREEN = np.array([46, 100, 40])
-UPPER_GREEN = np.array([89, 255, 255])
+LOWER_GREEN = np.array([62, 60, 40])
+UPPER_GREEN = np.array([80, 255, 180])
 
 
 GYRO_ENABLED = True
