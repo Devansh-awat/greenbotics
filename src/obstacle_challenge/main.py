@@ -7,7 +7,7 @@ from gpiozero import Button, LED
 import os
 from datetime import datetime
 
-from src.obstacle_challenge import config, neopixel
+from src.obstacle_challenge import config#, neopixel
 from src.motors import motor, servo
 from src.sensors import camera, bno055, vl53l1x
 from src.obstacle_challenge.utils import FPSCounter, SafetyMonitor
@@ -105,7 +105,7 @@ def initialize_all():
     print("--- Initializing All Systems ---")
     button = Button(BUTTON_PIN)
     led = LED(12)
-    neopixel.init()
+    #neopixel.init()
     if not all(
         [
             motor.initialize(),
@@ -131,7 +131,7 @@ def cleanup_all():
     camera.cleanup()
     bno055.cleanup()
     vl53l1x.cleanup()
-    neopixel.cleanup()
+    #neopixel.cleanup()
     global video_writer, video_path
     if video_writer is not None:
         video_writer.release()
@@ -237,7 +237,7 @@ if __name__ == "__main__":
                     if driving_direction == "clockwise"
                     else "INITIAL_LEFT_TURN"
                 )
-                neopixel.solid(250,250,255)
+                #neopixel.solid(250,250,255)
                 # starting from middle for testing
                 #current_state='DRIVING_STRAIGHT'
                 #turn_counter=4

@@ -11,7 +11,7 @@ import threading
 from gpiozero import Button
 
 # --- Constants and Configuration ---
-MOTOR_SPEED = 100
+MOTOR_SPEED = 85
 FRAME_WIDTH = 640
 FRAME_HEIGHT = 360
 FRAME_MIDPOINT_X = FRAME_WIDTH // 2
@@ -21,18 +21,21 @@ LOWER_BLACK = np.array([0, 0, 0])
 UPPER_BLACK = np.array([180, 255, 50])
 LOWER_ORANGE = np.array([6, 70, 20])
 UPPER_ORANGE = np.array([26, 255, 255])
+LOWER_MAGENTA = np.array([158, 73, 64])
+UPPER_MAGENTA = np.array([173, 255, 223])
 
 # --- Detection Parameters ---
 detection_params = {'min_area': 300, 'return_rule': 'biggest_in_job', 'return_mask': True}
 WALL_MIN_AREA = detection_params['min_area']
 BLOCK_MIN_AREA = 500
+MAGENTA_MIN_AREA = 500
 CLOSE_BLOCK_MIN_AREA = 1
 
 # --- Region of Interest (ROI) Definitions ---
-left_roi_x, left_roi_y, left_roi_w, left_roi_h = 0, 100, 100, 200
-right_roi_x, right_roi_y, right_roi_w, right_roi_h = 540, 100, 100, 200
-inner_left_roi_x, inner_left_roi_y, inner_left_roi_w, inner_left_roi_h = 140, 120, 100, 100
-inner_right_roi_x, inner_right_roi_y, inner_right_roi_w, inner_right_roi_h = 400, 120, 100, 100
+left_roi_x, left_roi_y, left_roi_w, left_roi_h = 0, 90, 100, 200
+right_roi_x, right_roi_y, right_roi_w, right_roi_h = 540, 90, 100, 200
+inner_left_roi_x, inner_left_roi_y, inner_left_roi_w, inner_left_roi_h = 140, 150, 100, 100
+inner_right_roi_x, inner_right_roi_y, inner_right_roi_w, inner_right_roi_h = 400, 150, 100, 100
 orange_roi_x, orange_roi_y, orange_roi_w, orange_roi_h = 280, 160, 80, 20
 full_frame_roi = (0, 40, 640, 180)
 close_block_roi = (300, 0, 1, 1)
@@ -126,7 +129,8 @@ def process_video_frame(frame):
     processed_data = {
         'detected_blocks': [],
         'detected_walls': [],
-        'detected_orange': []
+        'detected_orange': [],
+        'detected_magenta': []
     }
     
     #frame = frame[426:946, 164:1124]
@@ -144,6 +148,7 @@ def process_video_frame(frame):
     mask_red = cv2.bitwise_or(mask_red1, mask_red2)
     mask_green = cv2.inRange(hsv_frame, LOWER_GREEN, UPPER_GREEN)
     mask_orange = cv2.inRange(hsv_frame, LOWER_ORANGE, UPPER_ORANGE)
+    mask_magenta = cv2.inRange(hsv_frame, LOWER_MAGENTA, UPPER_MAGENTA)
 
     mask_red_or_green = cv2.bitwise_or(mask_red, mask_green)
     pure_black_mask = cv2.bitwise_and(mask_black, cv2.bitwise_not(mask_red_or_green))
@@ -154,6 +159,44 @@ def process_video_frame(frame):
     final_mask_close_red = cv2.bitwise_and(mask_red, roi_mask_close_blocks)
     final_mask_close_green = cv2.bitwise_and(mask_green, roi_mask_close_blocks)
     final_mask_orange = cv2.bitwise_and(mask_orange, roi_mask_orange)
+
+    # --- Magenta Detection ---
+    contours, _ = cv2.findContours(mask_magenta, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if contours:
+        # Find the single biggest magenta contour in the frame
+        biggest_contour = max(contours, key=cv2.contourArea)
+        area = cv2.contourArea(biggest_contour)
+
+        # Proceed only if the biggest contour is larger than the minimum area
+        if area > MAGENTA_MIN_AREA:
+            M = cv2.moments(biggest_contour)
+            if M["m00"] != 0:
+                # Calculate centroid (center of the object)
+                cx = int(M["m10"] / M["m00"])
+                cy = int(M["m01"] / M["m00"])
+
+                # Find the x-coordinate of the leftmost and rightmost pixels of the contour
+                leftmost_x = biggest_contour[:, 0, 0].min()
+                rightmost_x = biggest_contour[:, 0, 0].max()
+
+                # Calculate the distance of these points from the center of the frame
+                dist_to_center_left = abs(leftmost_x - FRAME_MIDPOINT_X)
+                dist_to_center_right = abs(rightmost_x - FRAME_MIDPOINT_X)
+
+                # Determine which x-coordinate is closer to the center
+                if dist_to_center_left <= dist_to_center_right:
+                    target_x = leftmost_x
+                else:
+                    target_x = rightmost_x
+                
+                # Store all the calculated data in the processed_data dictionary
+                processed_data['detected_magenta'].append({
+                    'type': 'magenta_block',
+                    'area': area,
+                    'centroid': (cx, cy),
+                    'contour': biggest_contour,
+                    'target_x': target_x  # The special x-coordinate you calculated
+                })
 
     # Block Detection
     all_detected_blocks = []
@@ -232,39 +275,101 @@ def process_video_frame(frame):
     return processed_data
 
 def annotate_video_frame(frame, detections, debug_info=""):
-    annotated_frame = frame.copy()
-    
-    # Draw ROIs
-    cv2.rectangle(annotated_frame, (left_roi_x, left_roi_y), (left_roi_x + left_roi_w, left_roi_y + left_roi_h), (0, 255, 255), 2)
-    cv2.rectangle(annotated_frame, (orange_roi_x, orange_roi_y), (orange_roi_x + orange_roi_w, orange_roi_y + orange_roi_h), (0, 165, 255), 2)
-    x, y, w, h = close_block_roi
-    cv2.rectangle(annotated_frame, (x, y), (x + w, y + h), (0, 255, 255), 2)
+    """
+    Annotates the video frame with ROIs, detected object contours, and the target x-coordinate.
 
-    # Draw detected walls
+    Args:
+        frame: The original video frame to annotate.
+        detections: A dictionary containing lists of detected walls, blocks, and orange objects.
+        debug_info: A string containing debug information to display on the frame.
+
+    Returns:
+        The annotated video frame.
+    """
+    annotated_frame = frame.copy()
+    light_blue = (255, 255, 0)  # BGR color for light blue
+    target_line_color = (255, 0, 255) # BGR color for magenta
+    midpoint_color = (0, 255, 255)      # Yellow for the midpoint goal
+    magenta_target_color = (255, 255, 255) # White for the magenta edge target
+
+    # --- Draw all ROIs in light blue ---
+    all_rois = [
+        (left_roi_x, left_roi_y, left_roi_w, left_roi_h),
+        (right_roi_x, right_roi_y, right_roi_w, right_roi_h),
+        (inner_left_roi_x, inner_left_roi_y, inner_left_roi_w, inner_left_roi_h),
+        (inner_right_roi_x, inner_right_roi_y, inner_right_roi_w, inner_right_roi_h),
+        (orange_roi_x, orange_roi_y, orange_roi_w, orange_roi_h),
+        full_frame_roi,
+        close_block_roi
+    ]
+    for x, y, w, h in all_rois:
+        cv2.rectangle(annotated_frame, (x, y), (x + w, y + h), light_blue, 2)
+
+    # --- Draw detected object contours ---
     for wall in detections['detected_walls']:
         cv2.drawContours(annotated_frame, [wall['contour']], -1, (255, 0, 0), 2)
-        text = f"A: {wall['area']}"
-        text_pos = (wall['centroid'][0] - 30, wall['centroid'][1])
-        cv2.putText(annotated_frame, text, text_pos, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
 
-    # Draw detected blocks
     for block in detections['detected_blocks']:
         draw_color = (0, 0, 255) if block['color'] == 'red' else (0, 255, 0)
         cv2.drawContours(annotated_frame, [block['contour']], -1, draw_color, 2)
 
-    # Draw detected orange objects
     for orange_obj in detections['detected_orange']:
-        draw_color = (0, 165, 255)
-        cv2.drawContours(annotated_frame, [orange_obj['contour']], -1, draw_color, 2)
-        text = f"Orange: {orange_obj['area']}"
-        text_pos = (orange_obj['centroid'][0] - 25, orange_obj['centroid'][1])
-        cv2.putText(annotated_frame, text, text_pos, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
+        cv2.drawContours(annotated_frame, [orange_obj['contour']], -1, (0, 165, 255), 2)
 
-    # Draw debug info
-    cv2.putText(annotated_frame, str(debug_info), (100, 50), cv2.FONT_HERSHEY_COMPLEX, 1, (0, 0, 255))
+    for magenta_obj in detections['detected_magenta']:
+        # Draw the contour of the magenta object
+        cv2.drawContours(annotated_frame, [magenta_obj['contour']], -1, (255, 0, 255), 2)
+
+        # Draw a small circle at the calculated target_x to visualize it
+        target_x = magenta_obj['target_x']
+        cy = magenta_obj['centroid'][1] # Use the centroid's y for plotting
+        cv2.circle(annotated_frame, (target_x, cy), 7, (255, 255, 255), -1) # White circle
+
+    # --- Determine and draw visualization lines ---
+    main_blocks = [b for b in detections['detected_blocks'] if b['type'] == 'block']
+
+    # --- Case 1: Both magenta and a main block are detected ---
+    if main_blocks and detections['detected_magenta']:
+        # Get all the necessary coordinates
+        block_x = main_blocks[0]['centroid'][0]
+        magenta_obj = detections['detected_magenta'][0]
+        target_x = magenta_obj['target_x']
+        midpoint_x = (block_x + target_x) // 2
+
+        # DRAW THE MIDPOINT (The robot's actual steering goal)
+        # A vertical yellow line shows where the robot wants the midpoint to be
+        cv2.line(annotated_frame, (midpoint_x, 0), (midpoint_x, FRAME_HEIGHT), midpoint_color, 2)
+        cv2.putText(annotated_frame, "Goal", (midpoint_x + 10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, midpoint_color, 2)
+
+        # DRAW THE MAGENTA TARGET_X (The edge point used in the calculation)
+        # A white circle shows exactly which point on the magenta object is being tracked
+        cy = magenta_obj['centroid'][1]
+        cv2.circle(annotated_frame, (target_x, cy), 7, magenta_target_color, -1)
+
+
+    # --- Case 2: Only a main block is detected (your original fallback logic) ---
+    elif main_blocks:
+        block = main_blocks[0]
+        block_color = block['color']
+        block_x, block_y = block['centroid']
+        original_target_x = 0
+        target = 0
+
+        if block_color == 'red':
+            target = 300 if block_y > 130 and 240 < block_x < 400 else 150
+            original_target_x = 320 - target
+        
+        elif block_color == 'green':
+            target = 200 if block_y > 140 and 240 < block_x < 400 else 100
+            original_target_x = 320 + target
+
+        if original_target_x > 0:
+            cv2.line(annotated_frame, (original_target_x, 0), (original_target_x, FRAME_HEIGHT), target_line_color, 2)
+
+    # --- Draw debug info ---
+    cv2.putText(annotated_frame, str(debug_info), (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2, cv2.LINE_AA)
     
     return annotated_frame
-
 
 # --- Main Execution ---
 if __name__ == "__main__":
@@ -277,8 +382,8 @@ if __name__ == "__main__":
     button = Button(23)
     
     profiler = cProfile.Profile()
-    fourcc = cv2.VideoWriter_fourcc(*'avc1')
-    out = cv2.VideoWriter('recording.mp4', fourcc, 60, (640, 360))
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    out = cv2.VideoWriter('recording.mp4', fourcc, 30, (640, 360))
 
     # --- State Variables ---
     orange_detection_history = deque(maxlen=30)
@@ -295,8 +400,8 @@ if __name__ == "__main__":
     time.sleep(1) # Allow threads to start and get initial readings
 
     # --- Initial Setup ---
-    dist_left = distance.get_distance(3)
-    dist_right = distance.get_distance(2)
+    dist_left = distance.get_distance(0)
+    dist_right = distance.get_distance(3)
     print(dist_left, dist_right)
     driving_direction = "clockwise"
     if dist_left is not None and dist_right is not None:
@@ -310,19 +415,19 @@ if __name__ == "__main__":
     try:
         profiler.enable()
         motor.forward(60)
-        #if False:
-        #    if driving_direction == "clockwise":
-        #        servo.set_angle_unlimited(60)
-        #        print(INITIAL_HEADING, bno055.get_heading())
-        #        while not(get_angular_difference(INITIAL_HEADING, bno055.get_heading())>= 30):
-        #            print(INITIAL_HEADING, bno055.get_heading())
-        #            time.sleep(0.05)
-        #    else:
-        #        servo.set_angle_unlimited(-50)
-        #        print(INITIAL_HEADING, bno055.get_heading())
-        #        while not(get_angular_difference(INITIAL_HEADING, bno055.get_heading())>= 30):
-        #            print(INITIAL_HEADING, bno055.get_heading())
-        #            time.sleep(0.05)
+        if True:
+            if driving_direction == "clockwise":
+                servo.set_angle_unlimited(45)
+                print(INITIAL_HEADING, bno055.get_heading())
+                while not(get_angular_difference(INITIAL_HEADING, bno055.get_heading())>= 30):
+                    print(INITIAL_HEADING, bno055.get_heading())
+                    time.sleep(0.05)
+            else:
+                servo.set_angle_unlimited(-45)
+                print(INITIAL_HEADING, bno055.get_heading())
+                while not(get_angular_difference(INITIAL_HEADING, bno055.get_heading())>= 30):
+                    print(INITIAL_HEADING, bno055.get_heading())
+                    time.sleep(0.05)
         motor.forward(MOTOR_SPEED)
 
         # --- Main Loop ---
@@ -370,16 +475,26 @@ if __name__ == "__main__":
                     
                     if block_color == 'red':
                         wall_inner_right_size = sum(obj['area'] for obj in detected_walls if obj['type'] == 'wall_inner_right')
-                        target = 300 if block_y > 130 and 240 < block_x < 400 else 150
+                        target = 300 if block_y > 130 and 240 < block_x < 400 else 170
                         debug.append(target)
-                        angle = ((block_x - (320 - target)) * 0.10) + 8
+                        if detections['detected_magenta'] and driving_direction == 'counter-clockwise':
+                            target_x = detections['detected_magenta'][0]['target_x']
+                            midpoint_x = (block_x + target_x) // 2
+                            angle = ((midpoint_x - FRAME_MIDPOINT_X) * 0.20) + 8
+                        else:
+                            angle = ((block_x - (320 - target)) * 0.30) + 6
                         if wall_inner_right_size > 3000: angle = np.clip(angle, -45, -5)
                         else: angle = np.clip(angle, -45, 45)
                     
                     elif block_color == 'green':
                         wall_inner_left_size = sum(obj['area'] for obj in detected_walls if obj['type'] == 'wall_inner_left')
                         target = 200 if block_y > 140 and 240 < block_x < 400 else 100
-                        angle = ((block_x - (320 + target)) * 0.12) + 8
+                        if detections['detected_magenta'] and driving_direction == 'clockwise':
+                            target_x = detections['detected_magenta'][0]['target_x']
+                            midpoint_x = (block_x + target_x) // 2
+                            angle = ((midpoint_x - FRAME_MIDPOINT_X) * 0.20) + 8
+                        else:
+                            angle = ((block_x - (320 + target)) * 0.12) + 8
                         if wall_inner_left_size > 3000: angle = np.clip(angle, 15, 45)
                         else: angle = np.clip(angle, -45, 20)
             else:
@@ -394,9 +509,9 @@ if __name__ == "__main__":
                     #right_distance = sensor_readings['distance_right']
                     print(left_distance, right_distance)
                 if left_pixel_size<100:
-                    right_pixel_size = 7000
+                    right_pixel_size += 7000
                 elif right_pixel_size<100:
-                    left_pixel_size = 7000
+                    left_pixel_size += 7000
                 if left_distance is not None and left_distance > 900: right_pixel_size += 5000
                 elif right_distance is not None and right_distance > 900: left_pixel_size += 5000
                 
