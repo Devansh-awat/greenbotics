@@ -18,7 +18,7 @@ FRAME_MIDPOINT_X = FRAME_WIDTH // 2
 
 # --- Color Definitions ---
 LOWER_BLACK = np.array([0, 0, 0])
-UPPER_BLACK = np.array([180, 255, 50])
+UPPER_BLACK = np.array([180, 255, 90])
 LOWER_ORANGE = np.array([6, 70, 20])
 UPPER_ORANGE = np.array([26, 255, 255])
 LOWER_MAGENTA = np.array([158, 73, 64])
@@ -32,12 +32,12 @@ MAGENTA_MIN_AREA = 500
 CLOSE_BLOCK_MIN_AREA = 1
 
 # --- Region of Interest (ROI) Definitions ---
-left_roi_x, left_roi_y, left_roi_w, left_roi_h = 0, 90, 100, 200
-right_roi_x, right_roi_y, right_roi_w, right_roi_h = 540, 90, 100, 200
+left_roi_x, left_roi_y, left_roi_w, left_roi_h = 0, 100, 135, 150
+right_roi_x, right_roi_y, right_roi_w, right_roi_h = 505, 100, 135, 150
 inner_left_roi_x, inner_left_roi_y, inner_left_roi_w, inner_left_roi_h = 140, 150, 100, 100
 inner_right_roi_x, inner_right_roi_y, inner_right_roi_w, inner_right_roi_h = 400, 150, 100, 100
-orange_roi_x, orange_roi_y, orange_roi_w, orange_roi_h = 280, 160, 80, 20
-full_frame_roi = (0, 40, 640, 180)
+orange_roi_x, orange_roi_y, orange_roi_w, orange_roi_h = 280, 170, 80, 20
+full_frame_roi = (0, 40, 640, 190)
 close_block_roi = (300, 0, 1, 1)
 
 # --- Detection Job Definitions ---
@@ -63,6 +63,7 @@ cv2.rectangle(roi_mask_close_blocks, (x, y), (x + w, y + h), 255, -1)
 roi_mask_orange = np.zeros((FRAME_HEIGHT, FRAME_WIDTH), dtype="uint8")
 cv2.rectangle(roi_mask_orange, (orange_roi_x, orange_roi_y), (orange_roi_x + orange_roi_w, orange_roi_h + orange_roi_y), 255, -1)
 
+roi_mask_magenta = np.zeros((FRAME_HEIGHT, FRAME_WIDTH), dtype="uint8")
 
 # --- Threading Classes ---
 class CameraThread(threading.Thread):
@@ -159,9 +160,10 @@ def process_video_frame(frame):
     final_mask_close_red = cv2.bitwise_and(mask_red, roi_mask_close_blocks)
     final_mask_close_green = cv2.bitwise_and(mask_green, roi_mask_close_blocks)
     final_mask_orange = cv2.bitwise_and(mask_orange, roi_mask_orange)
+    final_mask_magenta = cv2.bitwise_and(mask_magenta, roi_mask_magenta)
 
     # --- Magenta Detection ---
-    contours, _ = cv2.findContours(mask_magenta, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    contours, _ = cv2.findContours(final_mask_magenta, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     if contours:
         # Find the single biggest magenta contour in the frame
         biggest_contour = max(contours, key=cv2.contourArea)
@@ -371,6 +373,192 @@ def annotate_video_frame(frame, detections, debug_info=""):
     
     return annotated_frame
 
+def drive_straight_with_gyro(target_heading, duration, speed, direction='forward'):
+    """
+    Drives the robot straight for a set duration, using the gyroscope to maintain the target heading.
+
+    Args:
+        target_heading (float): The absolute heading (0-360) to maintain.
+        duration (float): The number of seconds to drive.
+        speed (int): The motor speed (0-100).
+        direction (str): 'forward' or 'reverse'.
+    """
+    print(f"Driving {direction} with gyro stabilization for {duration}s...")
+    
+    # This is the proportional gain for the steering controller.
+    # You may need to tune this value for your robot's specific dynamics.
+    # A higher value means more aggressive steering correction.
+    KP = 0.85
+
+    start_time = time.monotonic()
+    
+    if direction == 'forward':
+        motor.forward(speed)
+    else:
+        motor.reverse(speed)
+
+    while time.monotonic() - start_time < duration:
+        current_heading = sensor_thread.get_readings()['heading']
+        if current_heading is None:
+            time.sleep(0.01)
+            continue
+
+        # Calculate the error (difference between where we want to go and where we are)
+        error = target_heading - current_heading
+        
+        # Normalize the error to be between -180 and 180 degrees for the shortest turn
+        while error <= -180: error += 360
+        while error > 180: error -= 360
+
+        # Calculate the steering correction using the proportional gain
+        steer_angle = KP * error
+        
+        # Clamp the steering angle to the servo's physical limits (-45 to 45)
+        steer_angle = np.clip(steer_angle, -45, 45)
+
+        servo.set_angle(steer_angle)
+        time.sleep(0.01) # Loop at roughly 100Hz
+
+    # After the time is up, stop the robot
+    motor.brake()
+    servo.set_angle(0)
+    print("Gyro-stabilized drive complete.")
+
+def perform_initial_maneuver():
+    """
+    Executes the complete initial maneuver:
+    1. Turns 60 degrees and initiates a scan.
+    2. Completes the turn to 90 degrees.
+    3. Based on the scanned block color and driving direction, drives forward or reverses.
+    4. Performs a final turn to return to the initial 0-degree heading.
+    """
+    print("--- Executing Full Initial Maneuver ---")
+
+    # --- Configuration Constants for the Maneuver ---
+    MANEUVER_SPEED = 45
+    SERVO_TURN_ANGLE = 40.0
+    SCAN_TRIGGER_ANGLE_DEG = 40.0
+    TOTAL_TURN_ANGLE_DEG = 85.0
+    HEADING_LOCK_TOLERANCE = 5.0 # Degrees of tolerance for reaching a heading
+
+    # Durations for driving actions after the scan (in seconds)
+    DRIVE_FORWARD_DURATION = 0.8
+    DRIVE_FORWARD_SHORT_DURATION = 0.3
+    REVERSE_DURATION = 0
+    
+    # --- Set Direction-Specific Parameters ---
+    if driving_direction == "clockwise":
+        # For a RIGHT turn
+        initial_turn_servo = SERVO_TURN_ANGLE
+        final_turn_servo = -SERVO_TURN_ANGLE
+        direction_modifier = 1
+    else: # counter-clockwise
+        # For a LEFT turn
+        initial_turn_servo = -SERVO_TURN_ANGLE
+        final_turn_servo = SERVO_TURN_ANGLE
+        direction_modifier = -1
+
+    # --- Calculate All Target Headings ---
+    # We use a helper function to handle angle wrapping (e.g., 10 - 20 = 350)
+    def calculate_target_heading(base, offset):
+        return (base + offset + 360) % 360
+
+    scan_heading = calculate_target_heading(INITIAL_HEADING, SCAN_TRIGGER_ANGLE_DEG * direction_modifier)
+    ninety_degree_heading = calculate_target_heading(INITIAL_HEADING, TOTAL_TURN_ANGLE_DEG * direction_modifier)
+    print(f"Direction: {driving_direction.upper()}")
+    print(f"Initial Heading: {INITIAL_HEADING:.1f}°")
+    print(f"Scan Will Trigger At: {scan_heading:.1f}°")
+    print(f"Full Turn Target: {ninety_degree_heading:.1f}°")
+
+    # === STEP 1: Turn to Scan Point ===
+    motor.forward(MANEUVER_SPEED)
+    servo.set_angle(initial_turn_servo)
+    print("Starting initial turn...")
+
+    while get_angular_difference(INITIAL_HEADING, sensor_thread.get_readings()['heading']) < SCAN_TRIGGER_ANGLE_DEG:
+        time.sleep(0.02) # Wait to reach the scan angle
+
+    # === STEP 2: Perform Scan ===
+    motor.brake()
+    print(f"Scan angle reached. Pausing to scan for objects...")
+    detected_block_color = None
+    scan_start_time = time.monotonic()
+
+    while time.monotonic() - scan_start_time < 5.0: # 5-second scan window
+        frame = camera_thread.get_frame()
+        if frame is None: continue
+
+        detections = process_video_frame(frame)
+        annotated_frame = annotate_video_frame(frame,detections)
+        out.write(annotated_frame)
+        main_blocks = [b for b in detections.get('detected_blocks', []) if b['type'] == 'block']
+        
+        if main_blocks:
+            if main_blocks[0]['area']>2000:
+                detected_block_color = main_blocks[0]['color']
+                print(f"Block Found! Color: {detected_block_color.upper()}. Ending scan.")
+                break
+    
+    if detected_block_color is None:
+        print("Scan complete. No block was detected.")
+
+    # === STEP 3: Complete Turn to 90 Degrees ===
+    #motor.forward(MANEUVER_SPEED) # Resume turning
+    #print(f"Resuming turn to {ninety_degree_heading:.1f}°...")
+    
+    #while get_angular_difference(sensor_thread.get_readings()['heading'], ninety_degree_heading) > 10:
+    #    time.sleep(0.02)
+
+    #motor.brake()
+    servo.set_angle(0)
+    print("90-degree turn complete. Performing action based on scan...")
+    time.sleep(0.5) # A brief pause to stabilize
+
+    action_taken = "None"
+    # The heading we want to maintain is the 90-degree heading we just turned to.
+    drive_target_heading = ninety_degree_heading
+
+    if driving_direction == 'counter-clockwise':
+        if detected_block_color == 'green':
+            action_taken = f"DRIVE_FORWARD_GREEN for {DRIVE_FORWARD_DURATION}s"
+            drive_straight_with_gyro(drive_target_heading, DRIVE_FORWARD_DURATION, 70, 'forward')
+        elif detected_block_color == 'red':
+            action_taken = f"REVERSE_BEFORE_TURN for {REVERSE_DURATION}s"
+            drive_straight_with_gyro(drive_target_heading, REVERSE_DURATION, 70, 'reverse')
+        else: # No block found
+            action_taken = f"DRIVE_FORWARD_NONE for {DRIVE_FORWARD_SHORT_DURATION}s"
+            drive_straight_with_gyro(drive_target_heading, DRIVE_FORWARD_SHORT_DURATION, 70, 'forward')
+            
+    else: # clockwise
+        if detected_block_color == 'green':
+            action_taken = f"REVERSE_FOR_GREEN_CW for {REVERSE_DURATION}s"
+            drive_straight_with_gyro(drive_target_heading, REVERSE_DURATION, 70, 'reverse')
+        elif detected_block_color == 'red':
+            action_taken = f"DRIVE_FORWARD_RED_CW for {DRIVE_FORWARD_DURATION}s"
+            drive_straight_with_gyro(drive_target_heading, DRIVE_FORWARD_DURATION, 70, 'forward')
+        else: # No block found
+            action_taken = f"DRIVE_FORWARD_NONE_CW for {DRIVE_FORWARD_SHORT_DURATION}s"
+            drive_straight_with_gyro(drive_target_heading, DRIVE_FORWARD_SHORT_DURATION, 70, 'forward')
+
+    motor.brake()
+    print(f"Action complete: {action_taken}")
+    time.sleep(0.5)
+
+    # === STEP 5: Final Turn to Return to Initial Heading ===
+    print(f"Performing final turn to return to {INITIAL_HEADING:.1f}°...")
+    motor.forward(70) # Driving forward while turning is more stable
+    servo.set_angle(final_turn_servo)
+
+    # Loop until we are pointing straight again
+    while get_angular_difference(sensor_thread.get_readings()['heading'], INITIAL_HEADING) > 55:
+        #time.sleep(0.02)
+        pass
+    # --- Maneuver Complete ---
+    motor.brake()
+    servo.set_angle(0)
+    print("--- Initial Maneuver Complete. Transitioning to straight driving. ---")
+    #raise KeyboardInterrupt
+
 # --- Main Execution ---
 if __name__ == "__main__":
     # --- Initialization ---
@@ -386,7 +574,7 @@ if __name__ == "__main__":
     out = cv2.VideoWriter('recording.mp4', fourcc, 30, (640, 360))
 
     # --- State Variables ---
-    orange_detection_history = deque(maxlen=30)
+    orange_detection_history = deque(maxlen=150)
     turn_counter = 0
     angle = 0
     prevangle = 0
@@ -409,29 +597,21 @@ if __name__ == "__main__":
             driving_direction = "clockwise"
         else:
             driving_direction = "counter-clockwise"
-            
+    if driving_direction == "clockwise":
+        cv2.rectangle(roi_mask_magenta, (0, full_frame_roi[1]), (320, full_frame_roi[1] + full_frame_roi[3]), 255, -1)
+    else:
+        cv2.rectangle(roi_mask_magenta, (320, full_frame_roi[1]), (640, full_frame_roi[1] + full_frame_roi[3]), 255, -1)
+       
     INITIAL_HEADING = bno055.get_heading()
 
     try:
         profiler.enable()
-        motor.forward(60)
-        if True:
-            if driving_direction == "clockwise":
-                servo.set_angle_unlimited(45)
-                print(INITIAL_HEADING, bno055.get_heading())
-                while not(get_angular_difference(INITIAL_HEADING, bno055.get_heading())>= 30):
-                    print(INITIAL_HEADING, bno055.get_heading())
-                    time.sleep(0.05)
-            else:
-                servo.set_angle_unlimited(-45)
-                print(INITIAL_HEADING, bno055.get_heading())
-                while not(get_angular_difference(INITIAL_HEADING, bno055.get_heading())>= 30):
-                    print(INITIAL_HEADING, bno055.get_heading())
-                    time.sleep(0.05)
+        perform_initial_maneuver()
         motor.forward(MOTOR_SPEED)
 
         # --- Main Loop ---
         while True:
+            angle=0
             debug = []
             frame = camera_thread.get_frame()
             if frame is None:
@@ -477,19 +657,19 @@ if __name__ == "__main__":
                         wall_inner_right_size = sum(obj['area'] for obj in detected_walls if obj['type'] == 'wall_inner_right')
                         target = 300 if block_y > 130 and 240 < block_x < 400 else 170
                         debug.append(target)
-                        if detections['detected_magenta'] and driving_direction == 'counter-clockwise':
+                        if detections['detected_magenta'] and driving_direction == 'counter-clockwise' and not 240<detections['detected_magenta'][0]['target_x']<400:
                             target_x = detections['detected_magenta'][0]['target_x']
                             midpoint_x = (block_x + target_x) // 2
                             angle = ((midpoint_x - FRAME_MIDPOINT_X) * 0.20) + 8
                         else:
-                            angle = ((block_x - (320 - target)) * 0.30) + 6
+                            angle = ((block_x - (320 - target)) * 0.22) + 6
                         if wall_inner_right_size > 3000: angle = np.clip(angle, -45, -5)
                         else: angle = np.clip(angle, -45, 45)
                     
                     elif block_color == 'green':
                         wall_inner_left_size = sum(obj['area'] for obj in detected_walls if obj['type'] == 'wall_inner_left')
-                        target = 200 if block_y > 140 and 240 < block_x < 400 else 100
-                        if detections['detected_magenta'] and driving_direction == 'clockwise':
+                        target = 200 if block_y > 140 and 240 < block_x < 400 else 150
+                        if detections['detected_magenta'] and driving_direction == 'clockwise' and not 240<detections['detected_magenta'][0]['target_x']<400:
                             target_x = detections['detected_magenta'][0]['target_x']
                             midpoint_x = (block_x + target_x) // 2
                             angle = ((midpoint_x - FRAME_MIDPOINT_X) * 0.20) + 8
@@ -508,15 +688,15 @@ if __name__ == "__main__":
                     #left_distance = sensor_readings['distance_left']
                     #right_distance = sensor_readings['distance_right']
                     print(left_distance, right_distance)
-                if left_pixel_size<100:
-                    right_pixel_size += 7000
-                elif right_pixel_size<100:
-                    left_pixel_size += 7000
+                if left_pixel_size<100 and right_pixel_size>100:
+                    right_pixel_size += 15000
+                elif right_pixel_size<100 and left_pixel_size>100:
+                    left_pixel_size += 15000
                 if left_distance is not None and left_distance > 900: right_pixel_size += 5000
                 elif right_distance is not None and right_distance > 900: left_pixel_size += 5000
                 
                 debug.extend([left_pixel_size, right_pixel_size])
-                angle = (((left_pixel_size + wall_inner_left_size) - (right_pixel_size + wall_inner_right_size)) * 0.002) + 5
+                angle = (((left_pixel_size + wall_inner_left_size) - (right_pixel_size + wall_inner_right_size)) * 0.001) + 5
 
             # --- Finalize and Actuate ---
             debug.append(round(angle))
@@ -526,7 +706,8 @@ if __name__ == "__main__":
             
             out.write(annotated_frame)
             
-            angle = np.clip(angle, prevangle - 10, prevangle + 10)
+            #angle = np.clip(angle, prevangle - 10, prevangle + 10)
+            angle = np.clip(angle,-40,40)
             servo.set_angle(angle)
             prevangle = angle
             angle = 0
@@ -537,6 +718,9 @@ if __name__ == "__main__":
                     break
             
             if button.is_pressed:
+                motor.brake()
+                break
+            if turn_counter >= 13:
                 motor.brake()
                 break
 
