@@ -20,7 +20,6 @@ def mouse_event_handler(event, x, y, flags, param):
         current_mouse_x = x
         current_mouse_y = y
 
-
 def initialize():
     """Initializes the Picamera2."""
     global picam2
@@ -35,7 +34,7 @@ def initialize():
 
             controls={
                         #"AeEnable": False,
-                        "ExposureTime": 9000,
+                        #"ExposureTime": 5000,
                         #"AnalogueGain": 8.0,
                         "FrameRate": 56,
                     }
@@ -50,12 +49,11 @@ def initialize():
         print(f"FATAL: Camera failed to initialize: {e}")
         return False
 
-
 def capture_frame():
     """Captures and returns a single frame from the camera."""
     if picam2:
         frame = picam2.capture_array("lores")
-        frame = cv2.rotate(frame, cv2.ROTATE_180)
+        #frame = cv2.rotate(frame, cv2.ROTATE_180)
         #if frame.shape[2] == 4:
             #frame = cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR)
         return frame

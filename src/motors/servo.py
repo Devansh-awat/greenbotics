@@ -108,19 +108,16 @@ if __name__ == "__main__":
         print("Servo test failed during initialization.")
     else:
         try:
-            print("Testing UNLIMITED angle function. Press Ctrl+C to exit.")
             while True:
-                for angle in range(-60, 61, 5):
-                    print(f"\rSetting angle to: {angle}°   ", end="")
+                for angle in range(-45, 46, 1):
                     set_angle_unlimited(angle)
-                    time.sleep(0.05)
-                time.sleep(0.5)
-                for angle in range(60, -61, -5):
-                    print(f"\rSetting angle to: {angle}°   ", end="")
+                    time.sleep(0.01)
+                for angle in range(46, -46, -1):
                     set_angle_unlimited(angle)
-                    time.sleep(0.05)
-                time.sleep(0.5)
+                    time.sleep(0.01)
         except KeyboardInterrupt:
             print("\nTest interrupted by user.")
+            set_angle(0)
+            time.sleep(2)
         finally:
             cleanup()
