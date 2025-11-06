@@ -35,15 +35,25 @@ _sensors = {}
 _sensor_types = {}
 
 
+# ===========================================================================
+# ===== MODIFIED DFRobot_URM09_IIC_CircuitPython Class (NOW NON-BLOCKING) =====
+# ===========================================================================
 class DFRobot_URM09_IIC_CircuitPython:
-    # --- This class is unchanged ---
     _CMD_DISTANCE_MEASURE = 0x01
     _DIST_H_INDEX = 3
     _CMD_INDEX = 8
+    
+    # --- NEW: Define the measurement time required by the sensor ---
+    _MEASUREMENT_WAIT_MS = 30 # It takes ~30ms for a measurement to be ready
 
     def __init__(self, i2c_bus_channel, addr=URM09_ADDRESS):
         self.i2c_device = I2CDevice(i2c_bus_channel, addr)
         self._write_reg(7, [0x20])
+
+        # --- NEW: State variables for non-blocking operation ---
+        self._last_trigger_time = 0
+        self._last_distance = None
+        self._trigger_measurement() # Start the very first measurement
 
     def _write_reg(self, reg, data):
         buffer_to_write = bytearray([reg] + data)
@@ -56,18 +66,53 @@ class DFRobot_URM09_IIC_CircuitPython:
             i2c.write_then_readinto(bytearray([reg]), result)
         return list(result)
 
-    def get_distance(self):
+    # --- NEW: Helper function to trigger a measurement ---
+    def _trigger_measurement(self):
+        """Sends the command to start a distance measurement and records the time."""
         try:
             self._write_reg(self._CMD_INDEX, [self._CMD_DISTANCE_MEASURE])
-            time.sleep(0.03)
-            rslt = self._read_reg(self._DIST_H_INDEX, 2)
-            if not rslt or len(rslt) < 2: return None
-            distance_cm = (rslt[0] << 8) + rslt[1]
-            if distance_cm >= 32768: return None
-            return distance_cm * 10
-        except (IOError, IndexError, TypeError):
-            return None
+            self._last_trigger_time = time.monotonic()
+        except OSError:
+            # Ignore I/O errors on trigger, they will be caught on read
+            pass
 
+    # --- REWRITTEN: get_distance is now non-blocking ---
+    def get_distance(self):
+        """
+        Returns the distance in mm without blocking.
+        Checks if a reading is ready, and if so, reads it and starts the next one.
+        Returns None if no new data is ready.
+        """
+        # Check if enough time has passed since the last trigger
+        now = time.monotonic()
+        if (now - self._last_trigger_time) * 1000 < self._MEASUREMENT_WAIT_MS:
+            return None # Not ready yet, return immediately
+
+        # Time is up, try to read the result
+        try:
+            rslt = self._read_reg(self._DIST_H_INDEX, 2)
+
+            # --- Important: Trigger the NEXT measurement immediately ---
+            # This ensures it will be ready for a future call.
+            self._trigger_measurement()
+
+            if not rslt or len(rslt) < 2:
+                self._last_distance = None
+                return None
+            
+            distance_cm = (rslt[0] << 8) + rslt[1]
+            
+            if distance_cm >= 32768: # Value indicates an invalid reading
+                self._last_distance = None
+                return None
+
+            self._last_distance = distance_cm * 10
+            return self._last_distance
+
+        except (IOError, IndexError, TypeError):
+            # If there's an error, trigger a new measurement and return last known value or None
+            self._trigger_measurement()
+            return None
 
 def initialise(i2c_bus_num=I2C_BUS_MAIN, mux_address=TCA_ADDRESS, urm09_address=URM09_ADDRESS):
     """
@@ -108,6 +153,9 @@ def initialise(i2c_bus_num=I2C_BUS_MAIN, mux_address=TCA_ADDRESS, urm09_address=
 
             try:
                 urm09_sensor = DFRobot_URM09_IIC_CircuitPython(channel_bus, addr=urm09_address)
+                # --- MODIFICATION: Give the URM09 time for its first reading during setup ---
+                # This is a one-time block during initialization only.
+                time.sleep(0.05) 
                 if urm09_sensor.get_distance() is not None:
                     _sensors[i] = urm09_sensor
                     _sensor_types[i] = 'URM09'
@@ -137,9 +185,15 @@ def initialise(i2c_bus_num=I2C_BUS_MAIN, mux_address=TCA_ADDRESS, urm09_address=
     return True
 
 
+# ===============================================================
+# ===== NO CHANGES NEEDED BELOW THIS LINE =======================
+# ===============================================================
+
 def get_distance(channel):
     """
     Reads the distance from a sensor on a specific channel.
+    This function remains unchanged, as the non-blocking logic is now
+    encapsulated within the URM09 sensor's class.
     """
     if channel not in _sensors:
         return None
@@ -153,19 +207,24 @@ def get_distance(channel):
                 distance_cm = sensor.distance
                 sensor.clear_interrupt()
                 return distance_cm * 10.0 if distance_cm is not None else None
-            return None
+            return None # Already non-blocking
             
         elif sensor_type == 'URM09':
+            # This now calls the new non-blocking version
             return sensor.get_distance()
 
         elif sensor_type == 'VL53L8CX':
+            # This is assumed to be a fast, non-blocking read
             results = sensor.get_data()
             if results:
-                # Target status 5 and 9 are valid measurements
-                # For 4x4, zone 5 is one of the center zones
-                center_zone_idx = 5
-                if results.target_status[center_zone_idx] in [5, 9]:
-                    return float(results.distance_mm[center_zone_idx])
+                middle_zone_indices = [5, 6, 9, 10]
+                valid_distances = []
+                for i in middle_zone_indices:
+                    if results.target_status[i] in [5, 9]:
+                        valid_distances.append(results.distance_mm[i])                
+                if valid_distances:
+                    average_distance = sum(valid_distances) / len(valid_distances)
+                    return float(average_distance)   
             return None
 
     except (OSError, IOError):
@@ -198,7 +257,9 @@ if __name__ == "__main__":
              print("No sensors were detected on any channel.")
         else:
             try:
+                
                 print("\nReading data from all detected sensors. Press Ctrl+C to stop.")
+                print(_sensors.keys())
                 while True:
                     output_line_parts = []
                     # sorted() will correctly handle channel -1
@@ -211,9 +272,10 @@ if __name__ == "__main__":
                             output_line_parts.append(f"{ch_str} ({type_str}): {dist_mm:6.0f} mm")
                         else:
                             ch_str = f"Ch{i}" if i != -1 else "Bus2"
-                            output_line_parts.append(f"{ch_str} ({type_str}):   ----   ")
-                    
+                            output_line_parts.append(f"{ch_str} ({type_str}):   ----   ")                    
                     print(f"\r{(' | '.join(output_line_parts))}", end="", flush=True)
+                    # The main loop sleep is no longer blocked by the URM09 sensor,
+                    # so it can run at its intended frequency.
                     time.sleep(1/60)
             except KeyboardInterrupt:
                 print("\nTest interrupted by user.")

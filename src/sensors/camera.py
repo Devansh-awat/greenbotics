@@ -34,7 +34,7 @@ def initialize():
 
             controls={
                         #"AeEnable": False,
-                        #"ExposureTime": 5000,
+                        "ExposureTime": 10000,
                         #"AnalogueGain": 8.0,
                         "FrameRate": 56,
                     }

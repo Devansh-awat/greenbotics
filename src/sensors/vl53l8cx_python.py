@@ -65,7 +65,7 @@ class VL53L8CX:
     Python class for the VL53L8CX sensor, wrapping the ULD C library
     for a direct I2C connection.
     """
-    def __init__(self, i2c_bus_path="/dev/i2c-1"):
+    def __init__(self, i2c_bus_path="/dev/i2c-2"):
         """
         Initializes the sensor by loading the C library and connecting to the specified I2C bus.
         
@@ -82,6 +82,8 @@ class VL53L8CX:
         self.dev = VL53L8CX_Configuration()
         self.p_dev = ctypes.byref(self.dev)
 
+        self._is_ranging = False
+
         status = self.uld_lib.vl53l8cx_comms_init(self.p_dev)
         if status != 0:
             raise IOError(f"C lib failed to open I2C bus: {self.i2c_bus_path_str}. Check C code & permissions.")
@@ -92,12 +94,25 @@ class VL53L8CX:
             self.uld_lib.vl53l8cx_comms_close(self.p_dev)
             raise IOError(f"VL53L8CX sensor not found on bus {self.i2c_bus_path_str}.")
         
-        status = self.uld_lib.vl53l8cx_init(self.p_dev)
+        is_firmware_running = self.uld_lib.vl53l8cx_is_firmware_running(self.p_dev)
+        
+        if is_firmware_running == 1:
+            print("INFO: VL53L8CX firmware already running. Performing fast re-init.")
+            # Stop any ranging that might be active from a previous run
+            self.stop_ranging()
+            # Reset streamcount to ensure get_data() works correctly
+            self.dev.streamcount = 255
+            status = 0 # Success
+        else:
+            print("INFO: VL53L8CX firmware not detected. Performing full, one-time initialization...")
+            status = self.uld_lib.vl53l8cx_init(self.p_dev)
+
         if status != 0:
             self.uld_lib.vl53l8cx_comms_close(self.p_dev)
             raise IOError(f"Failed to initialize VL53L8CX sensor, status {status}")
 
-        self._is_ranging = False
+        self.set_ranging_frequency_hz(60)
+
         self._resolution = VL53L8CX_RESOLUTION_4X4
 
     def _define_c_functions(self):
@@ -105,6 +120,8 @@ class VL53L8CX:
         # ... (This function is unchanged) ...
         self.uld_lib.vl53l8cx_is_alive.argtypes = [ctypes.POINTER(VL53L8CX_Configuration), ctypes.POINTER(ctypes.c_uint8)]
         self.uld_lib.vl53l8cx_is_alive.restype = ctypes.c_uint8
+        self.uld_lib.vl53l8cx_is_firmware_running.argtypes = [ctypes.POINTER(VL53L8CX_Configuration)]
+        self.uld_lib.vl53l8cx_is_firmware_running.restype = ctypes.c_uint8
         self.uld_lib.vl53l8cx_init.argtypes = [ctypes.POINTER(VL53L8CX_Configuration)]
         self.uld_lib.vl53l8cx_init.restype = ctypes.c_uint8
         self.uld_lib.vl53l8cx_start_ranging.argtypes = [ctypes.POINTER(VL53L8CX_Configuration)]
@@ -135,6 +152,11 @@ class VL53L8CX:
             raise IOError(f"Failed to set resolution, status {status}")
         self._resolution = value
 
+    def set_ranging_frequency_hz(self, frequency):
+        status = self.uld_lib.vl53l8cx_set_ranging_frequency_hz(self.p_dev, int(frequency))
+        if status != 0:
+            raise IOError(f"Failed to set ranging frequency, status {status}")
+        
     def start_ranging(self):
         status = self.uld_lib.vl53l8cx_start_ranging(self.p_dev)
         if status != 0:

@@ -20,11 +20,11 @@ def analyze_profile(file_path):
 
     # --- Sort by Cumulative Time ---
     print("\n[ Top 10 by Cumulative Time (tottime of function + sub-calls) ]")
-    stats.sort_stats('cumulative').print_stats(10)
+    stats.sort_stats('cumulative').print_stats(20)
 
     # --- Sort by Total (Internal) Time ---
     print("\n[ Top 10 by Total Time (tottime, time spent in function itself) ]")
-    stats.sort_stats('tottime').print_stats(10)
+    stats.sort_stats('tottime').print_stats(20)
 
     print("-" * 50)
 

@@ -10,7 +10,7 @@ import cProfile
 import threading
 from gpiozero import Button
 
-MOTOR_SPEED = 90
+MOTOR_SPEED = 85
 FRAME_WIDTH = 640
 FRAME_HEIGHT = 360
 FRAME_MIDPOINT_X = FRAME_WIDTH // 2
@@ -30,12 +30,12 @@ CLOSE_BLOCK_MIN_AREA = 15
 
 left_roi_x, left_roi_y, left_roi_w, left_roi_h = 0, 140, 135, 150
 right_roi_x, right_roi_y, right_roi_w, right_roi_h = 505, 140, 135, 150
-inner_left_roi_x, inner_left_roi_y, inner_left_roi_w, inner_left_roi_h = 140, 190, 100, 100
-inner_right_roi_x, inner_right_roi_y, inner_right_roi_w, inner_right_roi_h = 400, 190, 100, 100
+inner_left_roi_x, inner_left_roi_y, inner_left_roi_w, inner_left_roi_h = 140, 165, 100, 100
+inner_right_roi_x, inner_right_roi_y, inner_right_roi_w, inner_right_roi_h = 400, 165 , 100, 100
 orange_roi_x, orange_roi_y, orange_roi_w, orange_roi_h = 280, 200, 80, 40
 close_x,close_y,close_w,close_h = 140,120,360,10
-full_frame_roi = (0, 80, 640, 185)
-close_block_roi = (230, 230, 180, 10)
+full_frame_roi = (0, 100, 640, 165)
+close_block_roi = (250, 230, 140, 10)
 
 left_side_job = {'roi': (left_roi_x, left_roi_y, left_roi_w, left_roi_h), 'type': 'wall_left'}
 right_side_job = {'roi': (right_roi_x, right_roi_y, right_roi_w, right_roi_h), 'type': 'wall_right'}
@@ -88,29 +88,44 @@ class CameraThread(threading.Thread):
         self.running = False
 
 class SensorThread(threading.Thread):
-    def __init__(self, bno, dist):
+    def __init__(self, bno, dist, init_event):
         super().__init__()
         self.bno = bno
         self.dist = dist
+        self.initialization_complete = init_event
         self.lock = threading.Lock()
         self.running = True
         self.daemon = True
         self.heading = None
         self.distance_left = None
         self.distance_right = None
+        self.distance_back = None
+        self.distance_center = None
 
     def run(self):
-        while self.running:
-            heading = self.bno.get_heading()
-            dist_left = self.dist.get_distance(0)
-            dist_center = self.dist.get_distance(2)
-            dist_right = self.dist.get_distance(3)
-            with self.lock:
-                self.heading = heading
-                self.distance_left = dist_left
-                self.distance_center = dist_center
-                self.distance_right = dist_right
-            time.sleep(0.02) 
+        try:
+            self.bno.initialize()
+            print("SensorThread: Initializing distance sensors...")
+            self.dist.initialise()
+            print("SensorThread: Distance sensors initialized.")
+            self.initialization_complete.set()
+            while self.running:
+                heading = self.bno.get_heading()
+                dist_left = self.dist.get_distance(0)
+                dist_center = self.dist.get_distance(2)
+                dist_right = self.dist.get_distance(3)
+                dist_back = self.dist.get_distance(-1)
+                with self.lock:
+                    self.heading = heading
+                    self.distance_left = dist_left
+                    self.distance_center = dist_center
+                    self.distance_right = dist_right
+                    self.distance_back = dist_back
+        finally:
+            print("SensorThread: Cleaning up distance sensors...")
+            self.dist.cleanup()
+            self.bno.cleanup()
+            print("SensorThread: Distance sensor cleanup complete.")
 
     def get_readings(self):
         with self.lock:
@@ -118,7 +133,8 @@ class SensorThread(threading.Thread):
                 'heading': self.heading,
                 'distance_left': self.distance_left,
                 'distance_center': self.distance_center,
-                'distance_right': self.distance_right
+                'distance_right': self.distance_right,
+                'distance_back' : self.distance_back
             }
 
     def stop(self):
@@ -442,9 +458,9 @@ def steer_with_gyro(current_heading: float,
 def perform_initial_maneuver():
     print("--- Executing Full Initial Maneuver ---")
 
-    MANEUVER_SPEED = 45
+    MANEUVER_SPEED = 43
     SERVO_TURN_ANGLE = 40.0
-    SCAN_TRIGGER_ANGLE_DEG = 30.0
+    SCAN_TRIGGER_ANGLE_DEG = 10.0
     TOTAL_TURN_ANGLE_DEG = 85.0
     HEADING_LOCK_TOLERANCE = 5.0
 
@@ -467,17 +483,16 @@ def perform_initial_maneuver():
     scan_heading = calculate_target_heading(INITIAL_HEADING, SCAN_TRIGGER_ANGLE_DEG * direction_modifier)
     ninety_degree_heading = calculate_target_heading(INITIAL_HEADING, TOTAL_TURN_ANGLE_DEG * direction_modifier)
     print(f"Direction: {driving_direction.upper()}")
-    print(f"Initial Heading: {INITIAL_HEADING:.1f}Â°")
-    print(f"Scan Will Trigger At: {scan_heading:.1f}Â°")
-    print(f"Full Turn Target: {ninety_degree_heading:.1f}Â°")
+    print(f"Initial Heading: {INITIAL_HEADING:.1f}°")
+    print(f"Scan Will Trigger At: {scan_heading:.1f}°")
+    print(f"Full Turn Target: {ninety_degree_heading:.1f}°")
 
     motor.forward(MANEUVER_SPEED)
     servo.set_angle_unlimited(initial_turn_servo)
     print("Starting initial turn...")
 
     while get_angular_difference(INITIAL_HEADING, sensor_thread.get_readings()['heading']) < SCAN_TRIGGER_ANGLE_DEG:
-        time.sleep(0.02)
-
+        print(sensor_thread.get_readings()['heading'])
     motor.brake()
     print(f"Scan angle reached. Pausing to scan for objects...")
     detected_block_color = None
@@ -551,45 +566,150 @@ def parking():
     motor.reverse(60)
     print(INITIAL_HEADING, sensor_thread.get_readings()['heading'])
     while get_angular_difference(INITIAL_HEADING, sensor_thread.get_readings()['heading']) > 5:
-        print(INITIAL_HEADING, sensor_thread.get_readings()['heading'])
+        #print(INITIAL_HEADING, sensor_thread.get_readings()['heading'])
         sensor_readings = sensor_thread.get_readings()
         servo.set_angle(-steer_with_gyro(sensor_readings['heading'],INITIAL_HEADING, kp=3))
         time.sleep(0.01)
     motor.brake()
     motor.forward(65)
+    print('forward')
     print(sensor_thread.get_readings()['distance_center'])
-    if sensor_thread.get_readings()['distance_center'] < 500:
-        while sensor_thread.get_readings()['distance_center'] > 500:
-            if driving_direction == 'clockwise':
-                servo.set_angle((500-sensor_thread.get_readings()['distance_left'])*0.05)
-                print(sensor_thread.get_readings()['distance_left'])
-            else:
-                servo.set_angle((sensor_thread.get_readings()['distance_right']-500)*0.05)
-                print(sensor_thread.get_readings()['distance_right'])
-            time.sleep(0.01)
-    else:
-        while sensor_thread.get_readings()['distance_center'] > 500:
-            print(INITIAL_HEADING, sensor_thread.get_readings()['heading'])
-            sensor_readings = sensor_thread.get_readings()
-            servo.set_angle(steer_with_gyro(sensor_readings['heading'],INITIAL_HEADING, kp=3))
-            time.sleep(0.01)
-    if driving_direction == 'clockwise':
-        servo.set_angle(-45)
-    else:
-        servo.set_angle(45)
-    time.sleep(0.5)
-    while get_angular_difference((INITIAL_HEADING+180)%360, sensor_thread.get_readings()['heading']) > 5:
-        print(INITIAL_HEADING, sensor_thread.get_readings()['heading'])
+    while True:
         sensor_readings = sensor_thread.get_readings()
-        servo.set_angle(steer_with_gyro(sensor_readings['heading'],(INITIAL_HEADING+180)%360, kp=1))
-        #time.sleep(0.01)
+        distance_center = sensor_readings.get('distance_center')
+        if distance_center is not None and distance_center <= 150:
+            print(f"Distance is {distance_center}. Exiting loop.")
+            break
+        print(distance_center)
+        servo.set_angle(steer_with_gyro(sensor_readings['heading'], (INITIAL_HEADING + 10) % 360, kp=1))
+        time.sleep(0.01)
+    motor.reverse(50)
+    #return
+    #print(sensor_thread.get_readings()['distance_back'], sensor_readings['heading'])
+    while get_angular_difference((INITIAL_HEADING+90)%360, sensor_thread.get_readings()['heading']) > 5 or sensor_thread.get_readings()['distance_back'] is not None and sensor_thread.get_readings()['distance_back'] > 230:
+        #print(sensor_thread.get_readings()['distance_back'], sensor_readings['heading'])
+        sensor_readings = sensor_thread.get_readings()
+        servo.set_angle_unlimited(-steer_with_gyro(sensor_readings['heading'],(INITIAL_HEADING+90)%360, kp=1, min_servo_angle=-60, max_servo_angle=60))
+        time.sleep(0.01)
+    #return
+    motor.forward(55) 
+    while get_angular_difference((INITIAL_HEADING+170)%360, sensor_thread.get_readings()['heading']) > 5:
+            #print(INITIAL_HEADING, sensor_thread.get_readings()['heading'])
+            sensor_readings = sensor_thread.get_readings()
+            servo.set_angle(steer_with_gyro(sensor_readings['heading'],(INITIAL_HEADING+170)%360, kp=1,min_servo_angle=-40, max_servo_angle=40))    
+    motor.brake()
+    servo.set_angle(0)
+    time.sleep(1)
+    first_magenta_line_passed = False
+    # This helper flag tracks if we are currently over the first line.
+    on_first_line = False
+
+    # Thresholds
+    MAGENTA_HIGH_THRESHOLD = 500 # The count needed to detect a line
+    MAGENTA_LOW_THRESHOLD = 200
+    motor.forward(55) 
+    while True:
+        frame = camera_thread.get_frame()
+        if frame is None:
+            print("Failed to get frame, breaking loop.")
+            break
+
+        roi = frame[160:, 600:]
+        mask = cv2.inRange(cv2.cvtColor(roi, cv2.COLOR_BGR2HSV), LOWER_BLACK, np.array([180, 255, 40]))
+        roi[mask == 255] = (0, 0, 0)
+        y_coords = np.argmax(mask, axis=0)
+        valid_y_coords = y_coords[mask[y_coords, np.arange(roi.shape[1])] > 0]
+        
+        steering_value = 0.0
+        if valid_y_coords.size > 0:
+            average_y = np.mean(valid_y_coords)
+            error = 25 - average_y
+            steering_value = 0.8 * error
+            cv2.line(frame, (600, 160 + int(average_y)), (frame.shape[1], 160 + int(average_y)), (0, 0, 255), 2)
+            
+        servo.set_angle(steering_value)
+        
+        cv2.line(frame, (600, 160 + 25), (frame.shape[1], 160 + 25), (0, 255, 0), 2)
+        # --- 2. Magenta Pixel Detection (remains the same) ---
+        roi_stop = frame[330:360, 426:640]
+        hsv_stop = cv2.cvtColor(roi_stop, cv2.COLOR_BGR2HSV)
+        mask_magenta = cv2.inRange(hsv_stop, LOWER_MAGENTA, UPPER_MAGENTA)
+        magenta_pixel_count = cv2.countNonZero(mask_magenta)
+
+        # --- 3. Visualization ---
+        cv2.rectangle(frame, (600, 160), (frame.shape[1], frame.shape[0]), (0, 255, 0), 2)
+        cv2.putText(frame, f"Servo angle: {steering_value}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+        cv2.rectangle(frame, (426, 330), (640, 360), (255, 0, 255), 2)
+        cv2.putText(frame, f"Magenta Pixels: {magenta_pixel_count}", (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+        
+        # Display the current state on the frame for easy debugging
+        state_text = f"Armed to Stop: {first_magenta_line_passed}"
+        cv2.putText(frame, state_text, (10, 110), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
+
+        out.write(frame)
+
+        # --- 4. New State-Based Stop Condition ---
+        
+        # If we are armed (already passed the first line), look for the second line to stop.
+        if first_magenta_line_passed:
+            if magenta_pixel_count > MAGENTA_HIGH_THRESHOLD:
+                print("Second magenta line detected. Stopping.")
+                break
+        # Otherwise, we are still handling the logic for crossing the first line.
+        else:
+            # If we have detected the peak of the first line, wait for the count to drop.
+            if on_first_line:
+                if magenta_pixel_count < MAGENTA_LOW_THRESHOLD:
+                    print("First magenta line fully crossed. Now armed to stop on the next one.")
+                    first_magenta_line_passed = True
+            # If we haven't seen the first line yet, look for its peak.
+            else:
+                if magenta_pixel_count > MAGENTA_HIGH_THRESHOLD:
+                    print("Detected what seems to be the first magenta line.")
+                    on_first_line = True
+    servo.set_angle(-2)
+    time.sleep(0.6)
+    motor.brake()
+    time.sleep(2)
+    motor.reverse(45)
+    servo.set_angle_unlimited(55)
+    while get_angular_difference((INITIAL_HEADING+120)%360, sensor_thread.get_readings()['heading']) > 10:
+            pass
+    motor.brake()
+    time.sleep(2)
+    motor.reverse(45)
+    servo.set_angle(0)
+    print('reverse')
+    while sensor_thread.get_readings()['distance_back'] is not None and sensor_thread.get_readings()['distance_back'] > 350:
+        pass
+    motor.brake()
+    time.sleep(2)
+    motor.reverse(45)
+    servo.set_angle_unlimited(-60)
+    print('reverse')
+    while True:
+        dist = sensor_thread.get_readings()['distance_back']
+        if dist is not None:
+            if dist <= 55:
+                break
+        if get_angular_difference((INITIAL_HEADING+180)%360, sensor_thread.get_readings()['heading']) < 5:
+            break
+    motor.brake()
+    time.sleep(2)
+    motor.forward(40)
+    while True:
+        if sensor_thread.get_readings()['distance_center'] is not None and sensor_thread.get_readings()['distance_center'] < 80:
+            break
+        if get_angular_difference(sensor_thread.get_readings()['heading'], (INITIAL_HEADING+180)%360) < 5:
+            break
+        servo.set_angle(steer_with_gyro(sensor_thread.get_readings()['heading'],(INITIAL_HEADING+180)%360, kp=1.5))
+        time.sleep(0.01)
+    motor.brake()
 
 if __name__ == "__main__":
     camera.initialize()
     motor.initialize()
     servo.initialize()
-    distance.initialise()
-    bno055.initialize()
     button = Button(23)
     
     profiler = cProfile.Profile()
@@ -597,20 +717,24 @@ if __name__ == "__main__":
     out = cv2.VideoWriter('recording.mp4', fourcc, 30, (640, 360))
 
     orange_detection_history = deque(maxlen=75)
+    front_sensor_values = deque(maxlen=20)
     orange_detection_history.append(False)
     turn_counter = 0
     angle = 0
     prevangle = 0
 
+    sensors_initialized_event = threading.Event()
     camera_thread = CameraThread(camera)
     camera_thread.start()
-    sensor_thread = SensorThread(bno055, distance)
+    sensor_thread = SensorThread(bno055, distance, sensors_initialized_event)
     sensor_thread.start()
     
+    print("MainThread: Waiting for sensors to initialize...")
+    sensors_initialized_event.wait() 
+    print("MainThread: Sensors are ready. Proceeding with main logic.")    
     time.sleep(1)
-
-    dist_left = distance.get_distance(0)
-    dist_right = distance.get_distance(3)
+    dist_left = sensor_thread.get_readings()['distance_left']
+    dist_right = sensor_thread.get_readings()['distance_right']
     print(dist_left, dist_right)
     driving_direction = "clockwise"
     if dist_left is not None and dist_right is not None:
@@ -623,7 +747,14 @@ if __name__ == "__main__":
     else:
         cv2.rectangle(roi_mask_magenta, (320, full_frame_roi[1]), (640, full_frame_roi[1] + full_frame_roi[3]), 255, -1)
        
-    INITIAL_HEADING = bno055.get_heading()
+    INITIAL_HEADING = None
+    while INITIAL_HEADING is None:
+        print("MainThread: Waiting for first valid heading reading...")
+        readings = sensor_thread.get_readings()
+        if readings and readings['heading'] is not None:
+            INITIAL_HEADING = readings['heading']
+        time.sleep(0.05)
+    print(f"MainThread: Initial heading locked: {INITIAL_HEADING}")
 
     try:
         profiler.enable()
@@ -663,10 +794,10 @@ if __name__ == "__main__":
                             angle = 30
                         servo.set_angle(angle)
                         motor.reverse(60)
-                        time.sleep(0.6)
+                        time.sleep(0.3)
                         motor.forward(60)
                         servo.set_angle(-angle)
-                        time.sleep(0.4)
+                        time.sleep(0.2)
                         break
                 
                 if not is_close_block:
@@ -706,9 +837,9 @@ if __name__ == "__main__":
                 right_pixel_size = sum(obj['area'] for obj in detected_walls if obj['type'] == 'wall_right')
                 wall_inner_left_size = sum(obj['area'] for obj in detected_walls if obj['type'] == 'wall_inner_left')
                 wall_inner_right_size = sum(obj['area'] for obj in detected_walls if obj['type'] == 'wall_inner_right')
-                if left_pixel_size<100 and right_pixel_size>100:
+                if left_pixel_size<100 and (right_pixel_size + wall_inner_right_size)>100:
                     right_pixel_size += 25000
-                elif right_pixel_size<100 and left_pixel_size>100:
+                elif right_pixel_size<100 and (left_pixel_size + wall_inner_left_size)>100:
                     left_pixel_size += 25000
                 if left_distance is not None and left_distance > 1500 and driving_direction == 'counter-clockwise': right_pixel_size += 25000
                 elif right_distance is not None and right_distance > 1500 and driving_direction == 'clockwise': left_pixel_size += 25000
@@ -721,7 +852,6 @@ if __name__ == "__main__":
                         angle = 35
                     else:
                         angle = -35
-            print(sensor_readings['distance_center'])
             debug.append(round(angle))
             debug.append(turn_counter)
             
@@ -749,8 +879,14 @@ if __name__ == "__main__":
 
     finally:
         profiler.disable()
+        print("MainThread: Signaling threads to stop...")
         camera_thread.stop()
         sensor_thread.stop()
+
+        print("MainThread: Waiting for threads to complete...")
+        camera_thread.join()
+        sensor_thread.join()
+        print("MainThread: All threads have completed.")
         motor.brake()
         out.release()
         print("Stopping profiler and saving stats...")
@@ -759,5 +895,4 @@ if __name__ == "__main__":
         servo.set_angle(0)
         servo.cleanup()
         motor.cleanup()
-        distance.cleanup()
         cv2.destroyAllWindows()
