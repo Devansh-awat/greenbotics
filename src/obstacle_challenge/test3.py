@@ -464,7 +464,7 @@ def perform_initial_maneuver():
     TOTAL_TURN_ANGLE_DEG = 85.0
     HEADING_LOCK_TOLERANCE = 5.0
 
-    DRIVE_FORWARD_DURATION = 1
+    DRIVE_FORWARD_DURATION = 1.1
     DRIVE_FORWARD_SHORT_DURATION = 0
     REVERSE_DURATION = 0
     
@@ -508,7 +508,8 @@ def perform_initial_maneuver():
         main_blocks = [b for b in detections.get('detected_blocks', []) if b['type'] == 'block']
         
         if main_blocks:
-            if main_blocks[0]['area']>3000:
+            print(main_blocks[0]['area'])
+            if main_blocks[0]['area']>1000:
                 detected_block_color = main_blocks[0]['color']
                 print(f"Block Found! Color: {detected_block_color.upper()}. Ending scan.")
                 break
@@ -563,14 +564,14 @@ def perform_initial_maneuver():
     print("--- Initial Maneuver Complete. Transitioning to straight driving. ---")
 
 def parking():
-    motor.reverse(60)
-    print(INITIAL_HEADING, sensor_thread.get_readings()['heading'])
-    while get_angular_difference(INITIAL_HEADING, sensor_thread.get_readings()['heading']) > 5:
-        #print(INITIAL_HEADING, sensor_thread.get_readings()['heading'])
-        sensor_readings = sensor_thread.get_readings()
-        servo.set_angle(-steer_with_gyro(sensor_readings['heading'],INITIAL_HEADING, kp=3))
-        time.sleep(0.01)
-    motor.brake()
+    # motor.reverse(60)
+    # print(INITIAL_HEADING, sensor_thread.get_readings()['heading'])
+    # while get_angular_difference(INITIAL_HEADING, sensor_thread.get_readings()['heading']) > 5:
+    #     #print(INITIAL_HEADING, sensor_thread.get_readings()['heading'])
+    #     sensor_readings = sensor_thread.get_readings()
+    #     servo.set_angle(-steer_with_gyro(sensor_readings['heading'],INITIAL_HEADING, kp=3))
+    #     time.sleep(0.01)
+    # motor.brake()
     motor.forward(65)
     print('forward')
     print(sensor_thread.get_readings()['distance_center'])
@@ -667,21 +668,25 @@ def parking():
                 if magenta_pixel_count > MAGENTA_HIGH_THRESHOLD:
                     print("Detected what seems to be the first magenta line.")
                     on_first_line = True
-    servo.set_angle(-2)
-    time.sleep(0.6)
+    servo.set_angle(1)
+    time.sleep(0.8)
     motor.brake()
     time.sleep(2)
     motor.reverse(45)
     servo.set_angle_unlimited(55)
-    while get_angular_difference((INITIAL_HEADING+120)%360, sensor_thread.get_readings()['heading']) > 10:
+    while get_angular_difference((INITIAL_HEADING+90)%360, sensor_thread.get_readings()['heading']) > 10:
             pass
     motor.brake()
     time.sleep(2)
-    motor.reverse(45)
+    motor.forward(45)
     servo.set_angle(0)
     print('reverse')
-    while sensor_thread.get_readings()['distance_back'] is not None and sensor_thread.get_readings()['distance_back'] > 350:
-        pass
+    while True:
+        dist = sensor_thread.get_readings()['distance_back']
+        print(dist)
+        if dist is not None and dist > 220:
+            break
+        
     motor.brake()
     time.sleep(2)
     motor.reverse(45)
@@ -690,7 +695,7 @@ def parking():
     while True:
         dist = sensor_thread.get_readings()['distance_back']
         if dist is not None:
-            if dist <= 55:
+            if dist <= 65:
                 break
         if get_angular_difference((INITIAL_HEADING+180)%360, sensor_thread.get_readings()['heading']) < 5:
             break
@@ -872,7 +877,7 @@ if __name__ == "__main__":
             if button.is_pressed:
                 motor.brake()
                 break
-            if turn_counter >= 13:
+            if turn_counter >= 5:
                 parking()
                 motor.brake()
                 break

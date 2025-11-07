@@ -214,17 +214,17 @@ def get_distance(channel):
             return sensor.get_distance()
 
         elif sensor_type == 'VL53L8CX':
-            # This is assumed to be a fast, non-blocking read
             results = sensor.get_data()
             if results:
-                middle_zone_indices = [5, 6, 9, 10]
+                middle_column_indices = [14,15,10,11,6,7,2,3]
+                
                 valid_distances = []
-                for i in middle_zone_indices:
+                for i in middle_column_indices:
                     if results.target_status[i] in [5, 9]:
-                        valid_distances.append(results.distance_mm[i])                
+                        valid_distances.append(results.distance_mm[i])
                 if valid_distances:
-                    average_distance = sum(valid_distances) / len(valid_distances)
-                    return float(average_distance)   
+                    min_distance = min(valid_distances)
+                    return float(min_distance)
             return None
 
     except (OSError, IOError):
