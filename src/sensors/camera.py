@@ -275,58 +275,11 @@ if __name__ == "__main__":
         cv2.setMouseCallback("Camera Test", mouse_event_handler)
 
         try:
-            print(
-                "Displaying CROPPED camera feed with block detection. Press 'q' to exit."
-            )
-            print("Move mouse over the frame to see pixel RGB and HSV values.")
             while True:
-                full_frame = capture_frame()
-                if full_frame is None:
-                    print("Failed to capture frame.")
-                    break
-
-                block_data, overlay, hsv_frame = find_biggest_block(full_frame)
-
-                if (
-                    hsv_frame is not None
-                    and 0 <= current_mouse_x < overlay.shape[1]
-                    and 0 <= current_mouse_y < overlay.shape[0]
-                ):
-                    b, g, r = overlay[current_mouse_y, current_mouse_x]
-                    h, s, v = hsv_frame[current_mouse_y, current_mouse_x]
-                    text_rgb = f"RGB: ({r:3d}, {g:3d}, {b:3d})"
-                    text_hsv = f"HSV: ({h:3d}, {s:3d}, {v:3d})"
-                    cv2.putText(
-                        overlay,
-                        text_rgb,
-                        (10, 30),
-                        cv2.FONT_HERSHEY_SIMPLEX,
-                        0.7,
-                        (255, 255, 255),
-                        2,
-                    )
-                    cv2.putText(
-                        overlay,
-                        text_hsv,
-                        (10, 60),
-                        cv2.FONT_HERSHEY_SIMPLEX,
-                        0.7,
-                        (255, 255, 255),
-                        2,
-                    )
-
-                if block_data:
-                    print(
-                        f"\rFound: {block_data['color']} block, Area: {block_data['area']:.0f}, Centroid: {block_data['centroid']}  ",
-                        end="",
-                    )
-                else:
-                    print(
-                        "\rNo block found.                                      ",
-                        end="",
-                    )
-
-                cv2.imshow("Camera Test", overlay)
+                frame = capture_frame()
+                cv2.line(frame,(242,277),(222,355),(255,255,255),2)
+                cv2.line(frame,(242,277),(369,277),(255,255,255),2)
+                cv2.imshow("Camera Test", frame)
                 if cv2.waitKey(1) & 0xFF == ord("q"):
                     break
         except KeyboardInterrupt:
