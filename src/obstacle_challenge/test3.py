@@ -857,7 +857,7 @@ if __name__ == "__main__":
 
     try:
         profiler.enable()
-        run_start_time = time.time()
+        run_start_time = time.monotonic()
         perform_initial_maneuver()
         motor.forward(MOTOR_SPEED)
 
@@ -888,7 +888,7 @@ if __name__ == "__main__":
                 for block in detected_blocks:
                     if block['type'] == 'close_block':
                         is_close_block = True
-                        if block['color'] == 'magenta':
+                        if block['color'] == 'magenta' and (time.monotonic()-run_start_time)>10:
                             angle = 0
                         elif block['color'] == 'red':
                             angle = -25
