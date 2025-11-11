@@ -10,7 +10,7 @@ import cProfile
 import threading
 from gpiozero import Button
 
-MOTOR_SPEED = 85
+MOTOR_SPEED = 90
 FRAME_WIDTH = 640
 FRAME_HEIGHT = 360
 FRAME_MIDPOINT_X = FRAME_WIDTH // 2
@@ -716,7 +716,6 @@ def parking():
     time.sleep(2)
     motor.reverse(40)
     servo.set_angle_unlimited(-60)
-    print('reverse')
     while True:
         dist = sensor_thread.get_readings()['distance_back']
         if dist is not None:
@@ -730,11 +729,12 @@ def parking():
     while True:
         if sensor_thread.get_readings()['distance_center'] is not None and sensor_thread.get_readings()['distance_center'] < 80:
             break
-        if get_angular_difference(sensor_thread.get_readings()['heading'], (INITIAL_HEADING+185)%360) < 5:
+        if get_angular_difference(sensor_thread.get_readings()['heading'], (INITIAL_HEADING+180)%360) < 5:
             break
-        servo.set_angle(steer_with_gyro(sensor_thread.get_readings()['heading'],(INITIAL_HEADING+185)%360, kp=1.5))
+        servo.set_angle(steer_with_gyro(sensor_thread.get_readings()['heading'],(INITIAL_HEADING+180)%360, kp=1.5))
         time.sleep(0.01)
     motor.brake()
+
 
 def parking2():
     global INITIAL_HEADING
@@ -888,8 +888,11 @@ if __name__ == "__main__":
                 for block in detected_blocks:
                     if block['type'] == 'close_block':
                         is_close_block = True
-                        if block['color'] == 'magenta' and (time.monotonic()-run_start_time)>10:
-                            angle = 0
+                        if block['color'] == 'magenta' and (time.monotonic()-run_start_time)>20:
+                            if driving_direction == 'clockwise':
+                                angle = -25
+                            else:
+                                angle = 30
                         elif block['color'] == 'red':
                             angle = -25
                         elif block['color'] == 'green':
@@ -913,7 +916,7 @@ if __name__ == "__main__":
                         wall_inner_right_size = sum(obj['area'] for obj in detected_walls if obj['type'] == 'wall_inner_right')
                         target = 300 if block_y > 170 and 200 < block_x < 440 else 150
                         debug.append(target)
-                        if detections['detected_magenta'] and driving_direction == 'counter-clockwise' and not 240<detections['detected_magenta'][0]['target_x']<400:
+                        if detections['detected_magenta'] and driving_direction == 'counter-clockwise' and not 320<detections['detected_magenta'][0]['target_x']<640:
                             target_x = detections['detected_magenta'][0]['target_x']
                             midpoint_x = (block_x + target_x) // 2
                             angle = ((midpoint_x - FRAME_MIDPOINT_X) * 0.20) + 1
@@ -925,7 +928,7 @@ if __name__ == "__main__":
                     elif block_color == 'green':
                         wall_inner_left_size = sum(obj['area'] for obj in detected_walls if obj['type'] == 'wall_inner_left')
                         target = 200 if block_y > 180 and 240 < block_x < 400 else 130
-                        if detections['detected_magenta'] and driving_direction == 'clockwise' and not 240<detections['detected_magenta'][0]['target_x']<400 and abs(detections['detected_magenta'][0]['target_y']-block_y)<70:
+                        if detections['detected_magenta'] and driving_direction == 'clockwise' and not 0<detections['detected_magenta'][0]['target_x']<320 and abs(detections['detected_magenta'][0]['target_y']-block_y)<70:
                             target_x = detections['detected_magenta'][0]['target_x']
                             midpoint_x = (block_x + target_x) // 2
                             angle = ((midpoint_x - FRAME_MIDPOINT_X) * 0.20) + 1

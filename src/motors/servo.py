@@ -99,6 +99,8 @@ def cleanup():
     if servo_pwm:
         set_angle(0.0)
         time.sleep(0.5)
+        servo_pwm.change_duty_cycle(0)
+        time.sleep(4.0 / config.SERVO_PWM_FREQ)
         servo_pwm.stop()
 
 
