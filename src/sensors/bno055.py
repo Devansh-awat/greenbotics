@@ -124,7 +124,7 @@ def initialize():
         i2c = board.I2C()
         sensor = adafruit_bno055.BNO055_I2C(i2c)
         time.sleep(1) # Allow sensor to boot up
-        load_calibration()
+        #load_calibration()
         print(f"INFO: Gyro (BNO055) Initialized. Temp: {sensor.temperature}°C")
         print(f"INFO: Current calibration status: {sensor.calibration_status}")
         return True

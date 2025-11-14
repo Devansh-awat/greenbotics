@@ -1,22 +1,25 @@
-import cv2
-from src.sensors import camera
-from src.motors import motor, servo
-from src.obstacle_challenge.test3 import process_video_frame,annotate_video_frame
-camera.initialize()
-motor.initialize()
+import time
+from src.sensors import bno055
+from src.motors import servo,motor
+from src.obstacle_challenge.main import get_angular_difference
+bno055.initialize()
 servo.initialize()
-motor.forward(55)
-try:
-    while True:
-        frame = camera.capture_frame()
-        detections = process_video_frame(frame)
-        detected_walls = detections['detected_walls']
-        left_pixel_size = sum(obj['area'] for obj in detected_walls if obj['type'] == 'wall_left')
-        servo.set_angle((left_pixel_size-13000)*0.005)
-        cv2.imshow('img',annotate_video_frame(frame,detections,'clockwise'))
-        if cv2.waitKey(1) & 0xFF == ord('q'):
-            break
-finally:
-    camera.cleanup()
-    servo.cleanup()
-    motor.cleanup()
+motor.initialize()
+motor.forward(50)
+servo.set_angle_unlimited(-60)
+while get_angular_difference(bno055.get_heading(), 270)>5:
+    time.sleep(0.01)
+print(bno055.get_heading())
+motor.reverse(50)
+while get_angular_difference(bno055.get_heading(), 5)>5:
+    time.sleep(0.01)
+print(bno055.get_heading())
+motor.brake()
+print(bno055.get_heading())
+time.sleep(5)
+print(bno055.get_heading())
+motor.cleanup()
+print(bno055.get_heading())
+servo.cleanup()
+print(bno055.get_heading())
+bno055.cleanup()

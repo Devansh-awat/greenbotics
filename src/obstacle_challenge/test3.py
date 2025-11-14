@@ -10,7 +10,7 @@ import cProfile
 import threading
 from gpiozero import Button
 
-MOTOR_SPEED = 90
+MOTOR_SPEED = 92
 FRAME_WIDTH = 640
 FRAME_HEIGHT = 360
 FRAME_MIDPOINT_X = FRAME_WIDTH // 2
@@ -603,11 +603,10 @@ def parking():
     while True:
         sensor_readings = sensor_thread.get_readings()
         distance_center = sensor_readings.get('distance_center')
-        if distance_center is not None and distance_center <= 150:
+        if distance_center is not None and distance_center <= 200:
             print(f"Distance is {distance_center}. Exiting loop.")
             break
-        print(distance_center)
-        servo.set_angle(steer_with_gyro(sensor_readings['heading'], (INITIAL_HEADING + 15) % 360, kp=1))
+        servo.set_angle(steer_with_gyro(sensor_readings['heading'], (INITIAL_HEADING + 10) % 360, kp=1))
         time.sleep(0.01)
     motor.reverse(50)
     #return
@@ -708,8 +707,7 @@ def parking():
     print('reverse')
     while True:
         dist = sensor_thread.get_readings()['distance_back']
-        print(dist)
-        if dist is not None and dist > 210:
+        if dist is not None and dist > 200:
             break
         
     motor.brake()
@@ -729,10 +727,20 @@ def parking():
     while True:
         if sensor_thread.get_readings()['distance_center'] is not None and sensor_thread.get_readings()['distance_center'] < 80:
             break
-        if get_angular_difference(sensor_thread.get_readings()['heading'], (INITIAL_HEADING+180)%360) < 5:
+        if get_angular_difference(sensor_thread.get_readings()['heading'], (INITIAL_HEADING+178)%360) < 5:
             break
-        servo.set_angle(steer_with_gyro(sensor_thread.get_readings()['heading'],(INITIAL_HEADING+180)%360, kp=1.5))
+        servo.set_angle(steer_with_gyro(sensor_thread.get_readings()['heading'],(INITIAL_HEADING+178)%360, kp=1.5))
         time.sleep(0.01)
+    motor.brake()
+    motor.reverse(40)
+    while True:
+        dist = sensor_thread.get_readings()['distance_back']
+        servo.set_angle(-steer_with_gyro(sensor_thread.get_readings()['heading'],(INITIAL_HEADING+178)%360, kp=1.5))
+        if dist is not None:
+            if dist <= 65:
+                break
+        if get_angular_difference((INITIAL_HEADING+180)%360, sensor_thread.get_readings()['heading']) < 5:
+            break
     motor.brake()
 
 
@@ -903,6 +911,7 @@ if __name__ == "__main__":
                         motor.forward(60)
                         servo.set_angle(-angle)
                         time.sleep(0.2)
+                        motor.forward(MOTOR_SPEED)
                         break
                 
                 if not is_close_block:
@@ -931,7 +940,7 @@ if __name__ == "__main__":
                         if detections['detected_magenta'] and driving_direction == 'clockwise' and not 0<detections['detected_magenta'][0]['target_x']<320 and abs(detections['detected_magenta'][0]['target_y']-block_y)<70:
                             target_x = detections['detected_magenta'][0]['target_x']
                             midpoint_x = (block_x + target_x) // 2
-                            angle = ((midpoint_x - FRAME_MIDPOINT_X) * 0.20) + 1
+                            angle = ((midpoint_x - FRAME_MIDPOINT_X) * 0.30) + 1
                         else:
                             angle = ((block_x - (320 + target)) * 0.07) + 1
                         if wall_inner_left_size > 3000: angle = np.clip(angle, 15, 45)
@@ -977,18 +986,21 @@ if __name__ == "__main__":
             if button.is_pressed:
                 motor.brake()
                 break
-            if turn_counter >= 13:
+            if turn_counter >= 1:
                 if driving_direction == 'clockwise':
                     parking()
                 else:
                     parking2()
-                run_end_time = time.time()
+                run_end_time = time.monotonic()
                 run_time = run_end_time-run_start_time
                 print(run_time)
                 motor.brake()
                 break
 
     finally:
+        servo.set_angle(0)
+        time.sleep(0.5)
+        print(sensor_thread.get_readings())
         profiler.disable()
         motor.brake()
         print("MainThread: Signaling threads to stop...")

@@ -218,7 +218,14 @@ if __name__ == "__main__":
     print("MainThread: Waiting for sensors to initialize...")
     sensors_initialized_event.wait()
     print("MainThread: Sensors are ready. Proceeding with main logic.")    
-    
+    INITIAL_HEADING = None
+    while INITIAL_HEADING is None:
+        print("MainThread: Waiting for first valid heading reading...")
+        readings = sensor_thread.get_readings()
+        if readings and readings['heading'] is not None:
+            INITIAL_HEADING = readings['heading']
+        time.sleep(0.05)
+    print(f"MainThread: Initial heading locked: {INITIAL_HEADING}")
     try:
         profiler.enable()
         run_start_time = time.monotonic()
@@ -256,7 +263,7 @@ if __name__ == "__main__":
                 left_pixel_size += 25000
             
             # Proportional steering based on the difference in wall area
-            angle = ((left_pixel_size - right_pixel_size) * 0.0005) + 1
+            angle = ((left_pixel_size - right_pixel_size) * 0.0005) + 3
             
             # Override with sharp turn if a wall is detected directly in front
             close_black_area = sum(obj['area'] for obj in detections.get('detected_close_black', []))
@@ -287,14 +294,17 @@ if __name__ == "__main__":
                 print("Button pressed. Stopping.")
                 break
             
-            if turn_counter >= 12 and not final_run_initiated:
-                print("12 turns reached. Stopping in 1.5 seconds")
+            if turn_counter == 4 and not final_run_initiated and get_angular_difference(sensor_thread.get_readings()['heading'],INITIAL_HEADING)<20:
+                print("12 turns reached. Stopping in 0.8 seconds")
                 final_run_initiated = True
                 final_run_start_time = time.monotonic()
 
             # 2. If the final run has been initiated, check if the timer is up
-            if final_run_initiated and (time.monotonic() - final_run_start_time >= 1.5):
-                print("1.5 second complete. Stopping.")
+            if final_run_initiated and (time.monotonic() - final_run_start_time) >= 0.8:
+                print("0.8 second complete. Stopping.")
+                break
+            if turn_counter >= 5:
+                motor.brake()
                 break
 
     finally:

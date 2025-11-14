@@ -111,10 +111,10 @@ if __name__ == "__main__":
     else:
         try:
             while True:
-                for angle in range(-45, 46, 1):
+                for angle in range(-90, 91, 1):
                     set_angle_unlimited(angle)
                     time.sleep(0.01)
-                for angle in range(46, -46, -1):
+                for angle in range(90, -91, -1):
                     set_angle_unlimited(angle)
                     time.sleep(0.01)
         except KeyboardInterrupt:
