@@ -21,6 +21,8 @@ LOWER_ORANGE = np.array([6, 70, 20])
 UPPER_ORANGE = np.array([26, 255, 255])
 LOWER_MAGENTA = np.array([158, 73, 64])
 UPPER_MAGENTA = np.array([173, 255, 223])
+LOWER_BLUE = np.array([94, 45, 58])
+UPPER_BLUE = np.array([140, 226, 185])
 target=0
 detection_params = {'min_area': 300, 'return_rule': 'biggest_in_job', 'return_mask': True}
 WALL_MIN_AREA = detection_params['min_area']
@@ -32,7 +34,7 @@ left_roi_x, left_roi_y, left_roi_w, left_roi_h = 0, 140, 135, 150
 right_roi_x, right_roi_y, right_roi_w, right_roi_h = 505, 140, 135, 150
 inner_left_roi_x, inner_left_roi_y, inner_left_roi_w, inner_left_roi_h = 140, 165, 100, 100
 inner_right_roi_x, inner_right_roi_y, inner_right_roi_w, inner_right_roi_h = 400, 165 , 100, 100
-orange_roi_x, orange_roi_y, orange_roi_w, orange_roi_h = 280, 200, 80, 40
+line_roi_x, line_roi_y, line_roi_w, line_roi_h = 280, 200, 80, 40
 close_x,close_y,close_w,close_h = 140,120,360,10
 full_frame_roi = (0, 100, 640, 165)
 close_block_roi = (250, 230, 140, 10)
@@ -55,8 +57,8 @@ roi_mask_close_blocks = np.zeros((FRAME_HEIGHT, FRAME_WIDTH), dtype="uint8")
 x, y, w, h = close_block_roi
 cv2.rectangle(roi_mask_close_blocks, (x, y), (x + w, y + h), 255, -1)
 
-roi_mask_orange = np.zeros((FRAME_HEIGHT, FRAME_WIDTH), dtype="uint8")
-cv2.rectangle(roi_mask_orange, (orange_roi_x, orange_roi_y), (orange_roi_x + orange_roi_w, orange_roi_h + orange_roi_y), 255, -1)
+roi_mask_line = np.zeros((FRAME_HEIGHT, FRAME_WIDTH), dtype="uint8")
+cv2.rectangle(roi_mask_line, (line_roi_x, line_roi_y), (line_roi_x + line_roi_w, line_roi_h + line_roi_y), 255, -1)
 
 roi_mask_magenta = np.zeros((FRAME_HEIGHT, FRAME_WIDTH), dtype="uint8")
 
@@ -140,12 +142,12 @@ class SensorThread(threading.Thread):
     def stop(self):
         self.running = False
 
-
 def process_video_frame(frame):
     processed_data = {
         'detected_blocks': [],
         'detected_walls': [],
         'detected_orange': [],
+        'detected_blue' : [],
         'detected_magenta': [],
         'detected_close_black': []
     }
@@ -160,18 +162,21 @@ def process_video_frame(frame):
     mask_green = cv2.inRange(hsv_frame, LOWER_GREEN, UPPER_GREEN)
     mask_orange = cv2.inRange(hsv_frame, LOWER_ORANGE, UPPER_ORANGE)
     mask_magenta = cv2.inRange(hsv_frame, LOWER_MAGENTA, UPPER_MAGENTA)
+    mask_blue = cv2.inRange(hsv_frame, LOWER_BLUE, UPPER_BLUE)
 
     mask_red_or_green = cv2.bitwise_or(mask_red, mask_green)
     pure_black_mask = cv2.bitwise_and(mask_black, cv2.bitwise_not(mask_red_or_green))
+    black_or_magenta_mask = cv2.bitwise_or(pure_black_mask, mask_magenta)
 
     final_mask_walls = cv2.bitwise_and(pure_black_mask, roi_mask_walls)
     final_mask_main_red = cv2.bitwise_and(mask_red, roi_mask_main_blocks)
     final_mask_main_green = cv2.bitwise_and(mask_green, roi_mask_main_blocks)
     final_mask_close_red = cv2.bitwise_and(mask_red, roi_mask_close_blocks)
     final_mask_close_green = cv2.bitwise_and(mask_green, roi_mask_close_blocks)
-    final_mask_orange = cv2.bitwise_and(mask_orange, roi_mask_orange)
+    final_mask_orange = cv2.bitwise_and(mask_orange, roi_mask_line)
+    final_mask_blue = cv2.bitwise_and(mask_blue,roi_mask_line)
     final_mask_magenta = cv2.bitwise_and(mask_magenta, roi_mask_magenta)
-    final_mask_close_black = cv2.bitwise_and(pure_black_mask, roi_mask_close_black)
+    final_mask_close_black = cv2.bitwise_and(black_or_magenta_mask, roi_mask_close_black)
     final_mask_close_magenta = cv2.bitwise_and(mask_magenta, roi_mask_close_blocks)
 
     contours, _ = cv2.findContours(final_mask_magenta, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -249,6 +254,17 @@ def process_video_frame(frame):
                 cy = int(M["m01"] / M["m00"])
                 processed_data['detected_orange'].append({'type': 'orange_block', 'color': 'orange', 'area': area, 'centroid': (cx, cy), 'contour': biggest_contour})
 
+    contours, _ = cv2.findContours(final_mask_blue, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if contours:
+        biggest_contour = max(contours, key=cv2.contourArea)
+        area = cv2.contourArea(biggest_contour)
+        if area > 20:
+            M = cv2.moments(biggest_contour)
+            if M["m00"] != 0:
+                cx = int(M["m10"] / M["m00"])
+                cy = int(M["m01"] / M["m00"])
+                processed_data['detected_blue'].append({'type': 'blue_block', 'color': 'blue', 'area': area, 'centroid': (cx, cy), 'contour': biggest_contour})
+
     contours, _ = cv2.findContours(final_mask_close_black, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     for contour in contours:
         area = cv2.contourArea(contour)
@@ -307,7 +323,7 @@ def annotate_video_frame(frame, detections, driving_direction, debug_info="", bl
         (right_roi_x, right_roi_y, right_roi_w, right_roi_h),
         (inner_left_roi_x, inner_left_roi_y, inner_left_roi_w, inner_left_roi_h),
         (inner_right_roi_x, inner_right_roi_y, inner_right_roi_w, inner_right_roi_h),
-        (orange_roi_x, orange_roi_y, orange_roi_w, orange_roi_h),
+        (line_roi_x, line_roi_y, line_roi_w, line_roi_h),
         (close_x, close_y, close_w, close_h),
         full_frame_roi,
         close_block_roi
@@ -316,7 +332,7 @@ def annotate_video_frame(frame, detections, driving_direction, debug_info="", bl
         cv2.rectangle(annotated_frame, (x, y), (x + w, y + h), light_blue, 2)
 
     for wall in detections['detected_walls']:
-        cv2.drawContours(annotated_frame, [wall['contour']], -1, (255, 0, 0), 2)
+        cv2.drawContours(annotated_frame, [wall['contour']], -1, (0, 0, 0), 2)
 
     for block in detections['detected_blocks']:
         draw_color = (255, 255, 255)
@@ -331,8 +347,11 @@ def annotate_video_frame(frame, detections, driving_direction, debug_info="", bl
     for orange_obj in detections['detected_orange']:
         cv2.drawContours(annotated_frame, [orange_obj['contour']], -1, (0, 165, 255), 2)
 
+    for blue_obj in detections['detected_blue']:
+        cv2.drawContours(annotated_frame, [blue_obj['contour']], -1, (255, 0, 0), 2)
+
     for black_obj in detections.get('detected_close_black', []):
-        cv2.drawContours(annotated_frame, [black_obj['contour']], -1, (255, 0, 0), 2)
+        cv2.drawContours(annotated_frame, [black_obj['contour']], -1, (0, 0, 0), 2)
 
     for magenta_obj in detections['detected_magenta']:
         cv2.drawContours(annotated_frame, [magenta_obj['contour']], -1, (255, 0, 255), 2)
@@ -499,8 +518,9 @@ def perform_initial_maneuver():
     servo.set_angle_unlimited(initial_turn_servo)
     print("Starting initial turn...")
 
-    while get_angular_difference(INITIAL_HEADING, sensor_thread.get_readings()['heading']) < SCAN_TRIGGER_ANGLE_DEG:
-        print(sensor_thread.get_readings()['heading'])
+    while get_angular_difference((INITIAL_HEADING+SCAN_TRIGGER_ANGLE_DEG)%360, sensor_thread.get_readings()['heading']) > 5:
+        #print(sensor_thread.get_readings()['heading'], get_angular_difference((INITIAL_HEADING+SCAN_TRIGGER_ANGLE_DEG)%360, sensor_thread.get_readings()['heading']))
+        pass
     motor.brake()
     print(f"Scan angle reached. Pausing to scan for objects...")
     detected_block_color = None
@@ -516,8 +536,7 @@ def perform_initial_maneuver():
         main_blocks = [b for b in detections.get('detected_blocks', []) if b['type'] == 'block']
         
         if main_blocks:
-            print(main_blocks[0]['area'])
-            if main_blocks[0]['area']>1000:
+            if main_blocks[0]['area']>1000 and 100<main_blocks[0]['centroid'][0]<540:
                 detected_block_color = main_blocks[0]['color']
                 print(f"Block Found! Color: {detected_block_color.upper()}. Ending scan.")
                 break
@@ -693,7 +712,7 @@ def parking():
                     print("Detected what seems to be the first magenta line.")
                     on_first_line = True
     servo.set_angle(1)
-    time.sleep(0.7)
+    time.sleep(0.6)
     motor.brake()
     time.sleep(2)
     motor.reverse(45)
@@ -702,47 +721,47 @@ def parking():
             pass
     motor.brake()
     time.sleep(2)
-    motor.forward(45)
+    print('parking first reverse turn:',sensor_thread.get_readings())
+    motor.forward(40)
     servo.set_angle(0)
     print('reverse')
     while True:
         dist = sensor_thread.get_readings()['distance_back']
-        if dist is not None and dist > 200:
+        if dist is not None and dist > 150:
             break
-        
+    print('parking forward:',sensor_thread.get_readings())
     motor.brake()
     time.sleep(2)
     motor.reverse(40)
-    servo.set_angle_unlimited(-60)
+    servo.set_angle_unlimited(-65)
     while True:
         dist = sensor_thread.get_readings()['distance_back']
         if dist is not None:
             if dist <= 65:
                 break
-        if get_angular_difference((INITIAL_HEADING+180)%360, sensor_thread.get_readings()['heading']) < 5:
+        if get_angular_difference((INITIAL_HEADING+180)%360, sensor_thread.get_readings()['heading']) < 2:
             break
     motor.brake()
     time.sleep(2)
-    motor.forward(40)
+    motor.forward(35)
     while True:
-        if sensor_thread.get_readings()['distance_center'] is not None and sensor_thread.get_readings()['distance_center'] < 80:
+        if sensor_thread.get_readings()['distance_center'] is not None and sensor_thread.get_readings()['distance_center'] < 75:
             break
-        if get_angular_difference(sensor_thread.get_readings()['heading'], (INITIAL_HEADING+178)%360) < 5:
+        if get_angular_difference(sensor_thread.get_readings()['heading'], (INITIAL_HEADING+180)%360) < 2:
             break
-        servo.set_angle(steer_with_gyro(sensor_thread.get_readings()['heading'],(INITIAL_HEADING+178)%360, kp=1.5))
+        servo.set_angle(steer_with_gyro(sensor_thread.get_readings()['heading'],(INITIAL_HEADING+180)%360, kp=1.5)+3)
         time.sleep(0.01)
     motor.brake()
-    motor.reverse(40)
+    motor.reverse(35)
     while True:
         dist = sensor_thread.get_readings()['distance_back']
-        servo.set_angle(-steer_with_gyro(sensor_thread.get_readings()['heading'],(INITIAL_HEADING+178)%360, kp=1.5))
+        servo.set_angle(-steer_with_gyro(sensor_thread.get_readings()['heading'],(INITIAL_HEADING+180)%360, kp=1.5)+3)
         if dist is not None:
-            if dist <= 65:
+            if dist <= 45:
                 break
-        if get_angular_difference((INITIAL_HEADING+180)%360, sensor_thread.get_readings()['heading']) < 5:
+        if get_angular_difference((INITIAL_HEADING+180)%360, sensor_thread.get_readings()['heading']) < 2:
             break
     motor.brake()
-
 
 def parking2():
     global INITIAL_HEADING
@@ -752,7 +771,7 @@ def parking2():
     while True:
         sensor_readings = sensor_thread.get_readings()
         distance_center = sensor_readings.get('distance_center')
-        if distance_center is not None and distance_center <= 150:
+        if distance_center is not None and distance_center <= 200:
             print(f"Distance is {distance_center}. Exiting loop.")
             break
         print(distance_center)
@@ -767,7 +786,7 @@ def parking2():
         servo.set_angle_unlimited(-steer_with_gyro(sensor_readings['heading'],(INITIAL_HEADING-90)%360, kp=1, min_servo_angle=-60, max_servo_angle=60))
         time.sleep(0.01)
     #return
-    motor.forward(55) 
+    motor.forward(75) 
     while get_angular_difference((INITIAL_HEADING-180)%360, sensor_thread.get_readings()['heading']) > 5:
             #print(INITIAL_HEADING, sensor_thread.get_readings()['heading'])
             sensor_readings = sensor_thread.get_readings()
@@ -793,7 +812,7 @@ def parking2():
 
         hsv_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
         mask_orange = cv2.inRange(hsv_frame, LOWER_ORANGE, UPPER_ORANGE)
-        final_mask_orange = cv2.bitwise_and(mask_orange, roi_mask_orange)
+        final_mask_orange = cv2.bitwise_and(mask_orange, roi_mask_line)
 
         contours, _ = cv2.findContours(final_mask_orange, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
@@ -882,7 +901,9 @@ if __name__ == "__main__":
             detected_blocks = detections['detected_blocks']
             detected_walls = detections['detected_walls']
             detected_orange_object = detections['detected_orange']
+            detected_blue_object = detections['detected_blue']
 
+            blue_detected_this_frame = bool(detected_blue_object)
             orange_detected_this_frame = bool(detected_orange_object)
             orange_detection_history.append(orange_detected_this_frame)
             if len(orange_detection_history) >= 3:
@@ -896,7 +917,7 @@ if __name__ == "__main__":
                 for block in detected_blocks:
                     if block['type'] == 'close_block':
                         is_close_block = True
-                        if block['color'] == 'magenta' and (time.monotonic()-run_start_time)>20:
+                        if block['color'] == 'magenta' and (time.monotonic()-run_start_time)>5:
                             if driving_direction == 'clockwise':
                                 angle = -25
                             else:
@@ -905,6 +926,9 @@ if __name__ == "__main__":
                             angle = -25
                         elif block['color'] == 'green':
                             angle = 30
+                        else:
+                            is_close_block = False
+                            break
                         servo.set_angle(angle)
                         motor.reverse(60)
                         time.sleep(0.3)
@@ -963,9 +987,14 @@ if __name__ == "__main__":
                 close_black_area = sum(obj['area'] for obj in detections.get('detected_close_black', []))
                 if close_black_area > 3000:
                     if driving_direction == 'clockwise':
-                        angle = 35
+                        angle += 35
                     else:
-                        angle = -35
+                        angle += -35
+                if left_pixel_size == 0 and right_pixel_size == 0 and(detected_blue_object or detected_blue_object):
+                    if driving_direction == 'clockwise':
+                        angle += 35
+                    else:
+                        angle += -35
             debug.append(round(angle))
             debug.append(turn_counter)
             
@@ -974,7 +1003,8 @@ if __name__ == "__main__":
             out.write(annotated_frame)
             angle = np.clip(angle, prevangle-10, prevangle+10)
             angle = np.clip(angle,-40,40)
-            servo.set_angle(angle)
+            if angle != prevangle:
+                servo.set_angle(angle)
             prevangle = angle
             angle = 0
             
@@ -986,7 +1016,7 @@ if __name__ == "__main__":
             if button.is_pressed:
                 motor.brake()
                 break
-            if turn_counter >= 1:
+            if turn_counter >= 13:
                 if driving_direction == 'clockwise':
                     parking()
                 else:
@@ -998,6 +1028,7 @@ if __name__ == "__main__":
                 break
 
     finally:
+        motor.brake()
         servo.set_angle(0)
         time.sleep(0.5)
         print(sensor_thread.get_readings())
