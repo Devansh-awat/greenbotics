@@ -210,3 +210,6 @@ __marimo__/
 .DS_Store
 *.mp4
 *.pstats
+obstacle/
+open/
+*.png

@@ -4,7 +4,10 @@ import threading
 import cProfile
 import cv2
 import numpy as np
-from gpiozero import Button
+from gpiozero import Button, LED
+import os
+import sys
+from datetime import datetime
 
 # Import all settings from the new config file
 from src.obstacle_challenge.main import get_angular_difference
@@ -193,10 +196,28 @@ if __name__ == "__main__":
     motor.initialize()
     servo.initialize()
     button = Button(23)
-    
+    led = LED(12)
     profiler = cProfile.Profile()
-    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    out = cv2.VideoWriter('recording.mp4', fourcc, 30, (config.FRAME_WIDTH, config.FRAME_HEIGHT))
+
+    run_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    base_folder = "videos"
+    run_folder = os.path.join(base_folder, run_timestamp)
+    
+    # 2. Create the directories. `exist_ok=True` prevents errors if the folder already exists.
+    os.makedirs(run_folder, exist_ok=True)
+
+    # 3. Define the full paths for the video and log files
+    video_path = os.path.join(run_folder, 'open.mp4')
+    log_path = os.path.join(run_folder, 'open_output.txt')
+    
+    # 4. Redirect all print statements (stdout) and errors (stderr) to the log file
+    #    We open the file and keep it open for the duration of the script.
+    log_file = open(log_path, 'w')
+    sys.stdout = log_file
+    sys.stderr = log_file
+
+    fourcc = cv2.VideoWriter_fourcc(*'avc1')
+    out = cv2.VideoWriter(video_path, fourcc, 30, (config.FRAME_WIDTH, config.FRAME_HEIGHT))
 
     # Deque to track recent orange line detections for debouncing
     orange_detection_history = deque(maxlen=5)
@@ -217,7 +238,9 @@ if __name__ == "__main__":
     
     print("MainThread: Waiting for sensors to initialize...")
     sensors_initialized_event.wait()
-    print("MainThread: Sensors are ready. Proceeding with main logic.")    
+    print("MainThread: Sensors are ready. Proceeding with main logic.")  
+    led.on()
+    button.wait_for_press()
     INITIAL_HEADING = None
     while INITIAL_HEADING is None:
         print("MainThread: Waiting for first valid heading reading...")
@@ -290,20 +313,20 @@ if __name__ == "__main__":
             out.write(annotated_frame)
             
             # --- Exit Conditions ---
-            if button.is_pressed:
-                print("Button pressed. Stopping.")
-                break
+            # if button.is_pressed:
+            #     print("Button pressed. Stopping.")
+            #     break
             
-            if turn_counter == 4 and not final_run_initiated and get_angular_difference(sensor_thread.get_readings()['heading'],INITIAL_HEADING)<20:
-                print("12 turns reached. Stopping in 0.8 seconds")
+            if turn_counter == 12 and not final_run_initiated and get_angular_difference(sensor_thread.get_readings()['heading'],INITIAL_HEADING)<30:
+                print("12 turns reached. Stopping in 0.6 seconds")
                 final_run_initiated = True
                 final_run_start_time = time.monotonic()
 
             # 2. If the final run has been initiated, check if the timer is up
-            if final_run_initiated and (time.monotonic() - final_run_start_time) >= 0.8:
-                print("0.8 second complete. Stopping.")
+            if final_run_initiated and (time.monotonic() - final_run_start_time) >= 0.6:
+                print("0.6 second complete. Stopping.")
                 break
-            if turn_counter >= 5:
+            if turn_counter >= 13:
                 motor.brake()
                 break
 
@@ -333,3 +356,6 @@ if __name__ == "__main__":
         motor.cleanup()
         cv2.destroyAllWindows()
         print("Program finished.")
+        if 'log_file' in locals() and not log_file.closed:
+            print(f"Log file saved to {log_path}") # This will print to your console
+            log_file.close()
