@@ -200,7 +200,7 @@ if __name__ == "__main__":
     profiler = cProfile.Profile()
 
     run_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    base_folder = "videos"
+    base_folder = "open"
     run_folder = os.path.join(base_folder, run_timestamp)
     
     # 2. Create the directories. `exist_ok=True` prevents errors if the folder already exists.
