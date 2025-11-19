@@ -36,7 +36,7 @@ def set_angle(input_angle: float):
     clamped_input = max(
         config.INPUT_ANGLE_MIN_SERVO, min(config.INPUT_ANGLE_MAX_SERVO, input_angle)
     )
-
+    clamped_input += 5
     input_range = config.INPUT_ANGLE_MAX_SERVO - config.INPUT_ANGLE_MIN_SERVO
     output_range = config.CALIBRATED_ANGLE_MAX - config.CALIBRATED_ANGLE_MIN
     target_output_angle = (
@@ -111,12 +111,14 @@ if __name__ == "__main__":
     else:
         try:
             while True:
-                for angle in range(-90, 91, 1):
-                    set_angle_unlimited(angle)
-                    time.sleep(0.01)
-                for angle in range(90, -91, -1):
-                    set_angle_unlimited(angle)
-                    time.sleep(0.01)
+                set_angle(0)
+                # for angle in range(-90, 91, 1):
+                #     set_angle_unlimited(angle)
+                #     time.sleep(0.01)
+                # for angle in range(90, -91, -1):
+                #     set_angle_unlimited(angle)
+                #     time.sleep(0.01)
+                time.sleep(5)
         except KeyboardInterrupt:
             print("\nTest interrupted by user.")
             set_angle(0)

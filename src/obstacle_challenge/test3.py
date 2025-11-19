@@ -64,6 +64,8 @@ roi_mask_line = np.zeros((FRAME_HEIGHT, FRAME_WIDTH), dtype="uint8")
 cv2.rectangle(roi_mask_line, (line_roi_x, line_roi_y), (line_roi_x + line_roi_w, line_roi_h + line_roi_y), 255, -1)
 
 roi_mask_magenta = np.zeros((FRAME_HEIGHT, FRAME_WIDTH), dtype="uint8")
+x, y, w, h = full_frame_roi
+cv2.rectangle(roi_mask_magenta, (x, y), (x + w, y + h), 255, -1)
 
 roi_mask_close_black = np.zeros((FRAME_HEIGHT, FRAME_WIDTH), dtype="uint8")
 cv2.rectangle(roi_mask_close_black, (close_x, close_y), (close_x + close_w, close_y + close_h), 255, -1)
@@ -168,7 +170,8 @@ def process_video_frame(frame):
     mask_blue = cv2.inRange(hsv_frame, LOWER_BLUE, UPPER_BLUE)
 
     mask_red_or_green = cv2.bitwise_or(mask_red, mask_green)
-    pure_black_mask = cv2.bitwise_and(mask_black, cv2.bitwise_not(mask_red_or_green))
+    mask_red_or_green_or_blue = cv2.bitwise_or(mask_red_or_green, mask_blue)
+    pure_black_mask = cv2.bitwise_and(mask_black, cv2.bitwise_not(mask_red_or_green_or_blue))
     black_or_magenta_mask = cv2.bitwise_or(pure_black_mask, mask_magenta)
 
     final_mask_walls = cv2.bitwise_and(pure_black_mask, roi_mask_walls)
@@ -520,7 +523,6 @@ def perform_initial_maneuver():
     if detected_block_color is None:
         print("Scan complete. No block was detected.")
 
-    servo.set_angle(0)
     print("90-degree turn complete. Performing action based on scan...")
     time.sleep(0.5)
 
@@ -532,8 +534,8 @@ def perform_initial_maneuver():
             motor.forward(60)
             while get_angular_difference(ninety_degree_heading, sensor_thread.get_readings()['heading']) > 5:
                 servo.set_angle(steer_with_gyro(sensor_thread.get_readings()['heading'],ninety_degree_heading))
-            action_taken = f"DRIVE_FORWARD_GREEN for {1}s"
-            drive_straight_with_gyro(drive_target_heading, 1, 70, 'forward')
+            action_taken = f"DRIVE_FORWARD_GREEN for {0.8}s"
+            drive_straight_with_gyro(drive_target_heading, 0.8, 70, 'forward')
         elif detected_block_color == 'red':
             motor.forward(60)
             while get_angular_difference(ninety_degree_heading, sensor_thread.get_readings()['heading']) > 5:
@@ -560,7 +562,7 @@ def perform_initial_maneuver():
             action_taken = f"DRIVE_FORWARD_RED_CW for {1}s"
             drive_straight_with_gyro(drive_target_heading, 1, 70, 'forward')
         else:
-            drive_straight_with_gyro((INITIAL_HEADING+55)%360, 1, 70, 'forward')
+            drive_straight_with_gyro((INITIAL_HEADING+55)%360, 0.5, 70, 'forward')
             return
             action_taken = f"DRIVE_FORWARD_NONE_CW for {DRIVE_FORWARD_SHORT_DURATION}s"
             drive_straight_with_gyro(drive_target_heading, DRIVE_FORWARD_SHORT_DURATION, 70, 'forward')
@@ -586,27 +588,27 @@ def perform_initial_maneuver():
     print("--- Initial Maneuver Complete. Transitioning to straight driving. ---")
 
 def parking():
-    motor.forward(65)
-    print('forward')
-    print(sensor_thread.get_readings()['distance_center'])
-    heading = 15
-    if driving_direction == 'clockwise':
-        heading = 2
-    while True:
-        sensor_readings = sensor_thread.get_readings()
-        distance_center = sensor_readings.get('distance_center')
-        if distance_center is not None and distance_center <= 200:
-            print(f"Distance is {distance_center}. Exiting loop.")
-            break
-        servo.set_angle(steer_with_gyro(sensor_readings['heading'], (INITIAL_HEADING + heading) % 360, kp=0.8))
-        time.sleep(0.01)
+    # motor.forward(65)
+    # print('forward')
+    # print(sensor_thread.get_readings()['distance_center'])
+    # heading = 15
+    # if driving_direction == 'clockwise':
+    #     heading = 2
+    # while True:
+    #     sensor_readings = sensor_thread.get_readings()
+    #     distance_center = sensor_readings.get('distance_center')
+    #     if distance_center is not None and distance_center <= 700:
+    #         print(f"Distance is {distance_center}. Exiting loop.")
+    #         break
+    #     servo.set_angle(steer_with_gyro(sensor_readings['heading'], (INITIAL_HEADING + heading) % 360, kp=0.8))
+    #     time.sleep(0.01)
     motor.reverse(50)
     #return
     #print(sensor_thread.get_readings()['distance_back'], sensor_readings['heading'])
     while True:
         print(sensor_thread.get_readings()['distance_back'], sensor_readings['heading'])
         sensor_readings = sensor_thread.get_readings()
-        if sensor_readings['distance_back'] is not None and sensor_readings['distance_back'] < 230:
+        if sensor_readings['distance_back'] is not None and sensor_readings['distance_back'] < 160:
             break
         servo.set_angle_unlimited(-steer_with_gyro(sensor_readings['heading'],(INITIAL_HEADING+90)%360, kp=1, min_servo_angle=-60, max_servo_angle=60))
         time.sleep(0.01)
@@ -687,7 +689,7 @@ def parking():
                     print("Detected what seems to be the first magenta line.")
                     on_first_line = True
     servo.set_angle(1)
-    time.sleep(0.6)
+    time.sleep(0.7)
     motor.brake()
     motor.reverse(45)
     servo.set_angle_unlimited(55)
@@ -701,7 +703,7 @@ def parking():
     while True:
         dist = sensor_thread.get_readings()['distance_back']
         print('Forward for parking back distance:', dist)
-        if dist is not None and dist > 150:
+        if dist is not None and dist > 180:
             break
         time.sleep(0.01)
     print('parking forward:',sensor_thread.get_readings())
@@ -768,6 +770,17 @@ def parking2():
     ROI_X_END = 40
     TARGET_Y_OFFSET_FROM_BOTTOM = 185
 
+    MAGENTA_HIGH_THRESHOLD = 500
+    MAGENTA_LOW_THRESHOLD = 200
+
+    ROI_Y_START = 160
+    ROI_X_END = 40
+    TARGET_Y_OFFSET_FROM_BOTTOM = 185
+
+    # State variables for magenta line detection
+    first_magenta_line_passed = False
+    on_first_line = False
+
     while True:
         frame = camera_thread.get_frame()
         if frame is None:
@@ -796,31 +809,82 @@ def parking2():
         cv2.rectangle(frame, (0, ROI_Y_START), (ROI_X_END, frame_height), (0, 255, 0), 2)
         cv2.putText(frame, f"Servo angle: {steering_value:.2f}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
 
-        hsv_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-        mask_orange = cv2.inRange(hsv_frame, LOWER_ORANGE, UPPER_ORANGE)
-        final_mask_orange = cv2.bitwise_and(mask_orange, roi_mask_line)
+        # Magenta line detection ROI on bottom left
+        roi_stop = frame[330:360, 0:214] 
+        hsv_stop = cv2.cvtColor(roi_stop, cv2.COLOR_BGR2HSV)
+        mask_magenta = cv2.inRange(hsv_stop, LOWER_MAGENTA, UPPER_MAGENTA)
+        magenta_pixel_count = cv2.countNonZero(mask_magenta)
 
-        contours, _ = cv2.findContours(final_mask_orange, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        cv2.rectangle(frame, (0, 330), (214, 360), (255, 0, 255), 2)
+        cv2.putText(frame, f"Magenta Pixels: {magenta_pixel_count}", (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+        
+        state_text = f"Armed to Stop: {first_magenta_line_passed}"
+        cv2.putText(frame, state_text, (10, 110), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
 
-        cv2.rectangle(frame, (line_roi_x, line_roi_y), (line_roi_x + left_roi_w, line_roi_y + line_roi_h), (0, 165, 255), 1)
-
-
-        if contours:
-            biggest_contour = max(contours, key=cv2.contourArea)
-            cv2.drawContours(frame, [biggest_contour], -1, (0, 165, 255), 2)
-            if cv2.contourArea(biggest_contour) > 50:
-                print(">>> Orange parking line detected! Transitioning to final maneuver. <<<")
-                motor.brake()
-                
-                print(f"Original INITIAL_HEADING was: {INITIAL_HEADING}")
-                INITIAL_HEADING = (INITIAL_HEADING + 180) % 360
-                print(f"New INITIAL_HEADING for parking() is: {INITIAL_HEADING}")
-                
-                parking()
-                out.write(frame)
+        if first_magenta_line_passed:
+            if magenta_pixel_count > MAGENTA_HIGH_THRESHOLD:
+                print("Second magenta line detected. Stopping.")
                 break
+        else:
+            if on_first_line:
+                if magenta_pixel_count < MAGENTA_LOW_THRESHOLD:
+                    print("First magenta line fully crossed. Now armed to stop on the next one.")
+                    first_magenta_line_passed = True
+            else:
+                if magenta_pixel_count > MAGENTA_HIGH_THRESHOLD:
+                    print("Detected what seems to be the first magenta line.")
+                    on_first_line = True
         
         out.write(frame)
+    servo.set_angle(1)
+    time.sleep(0.4)
+    motor.brake()
+    motor.reverse(45)
+    servo.set_angle_unlimited(-60)
+    while get_angular_difference((INITIAL_HEADING-90)%360, sensor_thread.get_readings()['heading']) > 10:
+            pass
+    motor.brake()
+    print('parking first reverse turn:',sensor_thread.get_readings())
+    motor.forward(40)
+    servo.set_angle(0)
+    print('reverse')
+    while True:
+        dist = sensor_thread.get_readings()['distance_back']
+        print('Forward for parking back distance:', dist)
+        if dist is not None and dist > 180:
+            break
+        time.sleep(0.01)
+    print('parking forward:',sensor_thread.get_readings())
+    motor.brake()
+    motor.reverse(40)
+    servo.set_angle_unlimited(65)
+    while True:
+        dist = sensor_thread.get_readings()['distance_back']
+        if dist is not None:
+            if dist <= 65:
+                break
+        if get_angular_difference((INITIAL_HEADING+180)%360, sensor_thread.get_readings()['heading']) < 2:
+            break
+    motor.brake()
+    motor.forward(35)
+    while True:
+        if sensor_thread.get_readings()['distance_center'] is not None and sensor_thread.get_readings()['distance_center'] < 75:
+            break
+        if get_angular_difference(sensor_thread.get_readings()['heading'], (INITIAL_HEADING+180)%360) < 2:
+            break
+        servo.set_angle(steer_with_gyro(sensor_thread.get_readings()['heading'],(INITIAL_HEADING+180)%360, kp=1.5)+3)
+        time.sleep(0.01)
+    motor.brake()
+    motor.reverse(35)
+    while True:
+        dist = sensor_thread.get_readings()['distance_back']
+        servo.set_angle(-steer_with_gyro(sensor_thread.get_readings()['heading'],(INITIAL_HEADING+180)%360, kp=1.5)+3)
+        if dist is not None:
+            if dist <= 45:
+                break
+        if get_angular_difference((INITIAL_HEADING+180)%360, sensor_thread.get_readings()['heading']) < 2:
+            break
+    motor.brake()
     
 if __name__ == "__main__":
     run_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -844,7 +908,6 @@ if __name__ == "__main__":
     profiler = cProfile.Profile()
 
     orange_detection_history = deque(maxlen=75)
-    front_sensor_values = deque(maxlen=20)
     orange_detection_history.append(False)
     turn_counter = 0
     angle = 0
@@ -862,6 +925,7 @@ if __name__ == "__main__":
     time.sleep(1)
     led.on()
     button.wait_for_press()
+    led.off()
     while True:
         dist_left = sensor_thread.get_readings()['distance_left']
         dist_right = sensor_thread.get_readings()['distance_right']
@@ -870,10 +934,8 @@ if __name__ == "__main__":
         if dist_left is not None and dist_right is not None:
             if dist_left < dist_right:
                 driving_direction = "clockwise"
-                cv2.rectangle(roi_mask_magenta, (0, full_frame_roi[1]), (320, full_frame_roi[1] + full_frame_roi[3]), 255, -1)
             else:
                 driving_direction = "counter-clockwise"
-                cv2.rectangle(roi_mask_magenta, (320, full_frame_roi[1]), (640, full_frame_roi[1] + full_frame_roi[3]), 255, -1)
             break
         time.sleep(0.05)
        
@@ -918,7 +980,7 @@ if __name__ == "__main__":
                         if driving_direction == 'clockwise':
                             INITIAL_HEADING = (INITIAL_HEADING-0.45)%360
                         else:
-                            INITIAL_HEADING = (INITIAL_HEADING+0.35)%360
+                            INITIAL_HEADING = (INITIAL_HEADING+0.15)%360
                         print(f"Orange detected after a gap. Turn counter is now: {turn_counter}")
 
             if detected_blocks:
@@ -940,10 +1002,10 @@ if __name__ == "__main__":
                             break
                         servo.set_angle(angle)
                         motor.reverse(60)
-                        time.sleep(0.3)
+                        time.sleep(0.5)
                         motor.forward(60)
                         servo.set_angle(-angle)
-                        time.sleep(0.2)
+                        time.sleep(0.3)
                         motor.forward(MOTOR_SPEED)
                         break
                 
@@ -971,7 +1033,7 @@ if __name__ == "__main__":
                     
                     elif block_color == 'green':
                         wall_inner_left_size = sum(obj['area'] for obj in detected_walls if obj['type'] == 'wall_inner_left')
-                        target = 200 if block_y > 180 and 240 < block_x < 400 else 130
+                        target = 200 if block_y > 170 and 240 < block_x < 400 else 150
                         if detections['detected_magenta'] and driving_direction == 'clockwise' and abs(detections['detected_magenta'][0]['target_y']-block_y)<70:
                             target_x = detections['detected_magenta'][0]['target_x']
                             midpoint_x = (block_x + target_x) // 2
@@ -979,9 +1041,16 @@ if __name__ == "__main__":
                             angle = ((midpoint_x - FRAME_MIDPOINT_X) * 0.30) + 1
                         else:
                             visual_target_x = 320+target
-                            angle = ((block_x - (320 + target)) * 0.07) + 1
+                            angle = ((block_x - (320 + target)) * 0.1) + 1
                         if wall_inner_left_size > 3000: angle = np.clip(angle, 15, 45)
                         else: angle = np.clip(angle, -45, 45 )
+            elif detections['detected_magenta']:
+                if driving_direction == 'clockwise':
+                    target = 320-200
+                else:
+                    target = 320+130
+                angle = angle = ((detections['detected_magenta'][0]['centroid'][0] - target) * 0.15) + 1
+        
             else:
                 left_pixel_size,right_pixel_size,wall_inner_left_size,wall_inner_right_size,left_distance,right_distance,target=0,0,0,0,0,0,0
                 left_pixel_size = sum(obj['area'] for obj in detected_walls if obj['type'] == 'wall_left')
