@@ -1,7 +1,6 @@
 from collections import deque
 import time
 import threading
-import cProfile
 import cv2
 import numpy as np
 from gpiozero import Button, LED
@@ -18,6 +17,8 @@ import src.open_challenge.config as config
 from src.sensors import bno055, camera, distance
 from src.motors import motor, servo
 
+ORANGE_COOLDOWN_FRAMES = 50
+ORANGE_DETECTION_HISTORY_LENGTH = 4
 
 class CameraThread(threading.Thread):
     def __init__(self, camera_instance):
@@ -197,7 +198,6 @@ if __name__ == "__main__":
     servo.initialize()
     button = Button(23)
     led = LED(12)
-    profiler = cProfile.Profile()
 
     run_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     base_folder = "open"
@@ -220,8 +220,8 @@ if __name__ == "__main__":
     out = cv2.VideoWriter(video_path, fourcc, 30, (config.FRAME_WIDTH, config.FRAME_HEIGHT))
 
     # Deque to track recent orange line detections for debouncing
-    orange_detection_history = deque(maxlen=5)
-    orange_detection_history.append(False)
+    orange_detection_history = deque([False] * ORANGE_DETECTION_HISTORY_LENGTH,maxlen=ORANGE_DETECTION_HISTORY_LENGTH)
+    cooldown_frames = 0
 
     final_run_initiated = False
     final_run_start_time = None
@@ -250,7 +250,6 @@ if __name__ == "__main__":
         time.sleep(0.05)
     print(f"MainThread: Initial heading locked: {INITIAL_HEADING}")
     try:
-        profiler.enable()
         run_start_time = time.monotonic()
         motor.forward(config.MOTOR_SPEED)
 
@@ -268,11 +267,12 @@ if __name__ == "__main__":
             orange_detected_this_frame = bool(detections['detected_orange'])
             orange_detection_history.append(orange_detected_this_frame)
             
-            # Check for a rising edge in detection: False -> True
-            if len(orange_detection_history) >= 2:
-                if orange_detection_history[-1] and not orange_detection_history[-2]:
-                    turn_counter += 1
-                    print(f"Orange line detected. Turn counter is now: {turn_counter}")
+            if cooldown_frames > 0:
+                cooldown_frames -= 1
+            elif not orange_detection_history[-ORANGE_DETECTION_HISTORY_LENGTH] and all(list(orange_detection_history)[1:]):
+                turn_counter += 1
+                cooldown_frames = ORANGE_COOLDOWN_FRAMES
+                print("turn_counter ---------------->", turn_counter)
 
             # --- Steering Logic ---
             # Balance pixel areas of left vs. right walls
@@ -286,7 +286,7 @@ if __name__ == "__main__":
                 left_pixel_size += 25000
             
             # Proportional steering based on the difference in wall area
-            angle = ((left_pixel_size - right_pixel_size) * 0.0005) + 3
+            angle = ((left_pixel_size - right_pixel_size) * 0.0005)
             
             # Override with sharp turn if a wall is detected directly in front
             close_black_area = sum(obj['area'] for obj in detections.get('detected_close_black', []))
@@ -310,7 +310,11 @@ if __name__ == "__main__":
             debug.append(f"Angle:{int(angle)}")
             debug.append(f"Turns:{turn_counter}")
             annotated_frame = annotate_video_frame(frame, detections, debug_info=str(debug))
-            out.write(annotated_frame)
+            try:
+                out.write(annotated_frame)
+            except Exception as e:
+                print(e)
+
             
             # --- Exit Conditions ---
             # if button.is_pressed:
@@ -335,7 +339,6 @@ if __name__ == "__main__":
         run_time = run_end_time - run_start_time 
         print(f'Run completed in: {run_time:.2f} seconds.')
         # --- Cleanup ---
-        profiler.disable()
         motor.brake()
         print("MainThread: Signaling threads to stop...")
         camera_thread.stop()
@@ -347,8 +350,6 @@ if __name__ == "__main__":
         print("MainThread: All threads have completed.")
         
         out.release()
-        print("Stopping profiler and saving stats...")
-        profiler.dump_stats("open_challenge.pstats")
         
         camera.cleanup()
         servo.set_angle(0)

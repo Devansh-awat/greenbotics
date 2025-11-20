@@ -39,9 +39,9 @@ CW_DRIVE_FORWARD_NONE_FRAMES = 0
 
 LOWER_RED_1 = np.array([0, 100, 55])
 UPPER_RED_1 = np.array([5, 255, 255])
-LOWER_RED_2 = np.array([175, 100, 55])
+LOWER_RED_2 = np.array([174, 100, 55])
 UPPER_RED_2 = np.array([180, 255, 255])
-LOWER_GREEN = np.array([55, 60, 40])
+LOWER_GREEN = np.array([40, 60, 40])
 UPPER_GREEN = np.array([80, 255, 180])
 
 

@@ -44,6 +44,7 @@ cv2.createTrackbar("VAL MAX 2", "Red Trackbars", UPPER_RED_2[2], 255, empty)
 while True:
     # Capture a frame from the camera and convert it to HSV color space
     image = camera.capture_frame()
+    image = cv2.GaussianBlur(image, (1, 7), 0)
     imgHSV = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
 
     # --- Green Color Detection ---
