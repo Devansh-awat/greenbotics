@@ -6,6 +6,7 @@ import numpy as np
 from gpiozero import Button, LED
 import os
 import sys
+import traceback
 from datetime import datetime
 
 # Import all settings from the new config file
@@ -26,11 +27,11 @@ class CameraThread(threading.Thread):
         self.camera = camera_instance
         self.latest_frame = None
         self.lock = threading.Lock()
-        self.running = True
+        self.stop_event = threading.Event()
         self.daemon = True
 
     def run(self):
-        while self.running:
+        while not self.stop_event.is_set():
             frame = self.camera.capture_frame()
             with self.lock:
                 self.latest_frame = frame
@@ -42,7 +43,7 @@ class CameraThread(threading.Thread):
             return None
 
     def stop(self):
-        self.running = False
+        self.stop_event.set()
 
 class SensorThread(threading.Thread):
     def __init__(self, bno, dist, init_event):
@@ -51,7 +52,7 @@ class SensorThread(threading.Thread):
         self.dist = dist
         self.initialization_complete = init_event
         self.lock = threading.Lock()
-        self.running = True
+        self.stop_event = threading.Event()
         self.daemon = True
         self.heading = None
         self.distance_left = None
@@ -62,40 +63,44 @@ class SensorThread(threading.Thread):
     def run(self):
         try:
             self.bno.initialize()
-            print("SensorThread: Initializing distance sensors...")
-            self.dist.initialise()
-            print("SensorThread: Distance sensors initialized.")
+            print("SensorThread: IMU initialized.")
+            #self.dist.initialise()
+            #print("SensorThread: Distance sensors initialized.")
             self.initialization_complete.set()
-            while self.running:
+            while not self.stop_event.is_set():
                 heading = self.bno.get_heading()
-                dist_left = self.dist.get_distance(0)
-                dist_center = self.dist.get_distance(2)
-                dist_right = self.dist.get_distance(3)
-                dist_back = self.dist.get_distance(-1)
+                #dist_left = self.dist.get_distance(0)
+                #dist_center = self.dist.get_distance(2)
+                #dist_right = self.dist.get_distance(3)
+                #dist_back = self.dist.get_distance(-1)
                 with self.lock:
                     self.heading = heading
-                    self.distance_left = dist_left
-                    self.distance_center = dist_center
-                    self.distance_right = dist_right
-                    self.distance_back = dist_back
+                    #self.distance_left = dist_left
+                    #self.distance_center = dist_center
+                    #self.distance_right = dist_right
+                    #self.distance_back = dist_back
+        except Exception as e:
+            print(f"SensorThread: ERROR during initialization/operation: {e}")
+            traceback.print_exc()
+            self.initialization_complete.set()
         finally:
-            print("SensorThread: Cleaning up distance sensors...")
-            self.dist.cleanup()
+            #print("SensorThread: Cleaning up distance sensors...")
+            #self.dist.cleanup()
             self.bno.cleanup()
-            print("SensorThread: Distance sensor cleanup complete.")
+            print("SensorThread: IMU cleanup complete.")
 
     def get_readings(self):
         with self.lock:
             return {
-                'heading': self.heading,
-                'distance_left': self.distance_left,
-                'distance_center': self.distance_center,
-                'distance_right': self.distance_right,
-                'distance_back' : self.distance_back
+                'heading': self.heading
+                #'distance_left': self.distance_left,
+                #'distance_center': self.distance_center,
+                #'distance_right': self.distance_right,
+                #'distance_back' : self.distance_back
             }
 
     def stop(self):
-        self.running = False
+        self.stop_event.set()
 
 
 def process_video_frame(frame):
