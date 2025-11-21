@@ -45,59 +45,36 @@ class CameraThread(threading.Thread):
     def stop(self):
         self.stop_event.set()
 
-class SensorThread(threading.Thread):
-    def __init__(self, bno, dist, init_event):
+class ImuThread(threading.Thread):
+    def __init__(self, bno, init_event):
         super().__init__()
         self.bno = bno
-        self.dist = dist
         self.initialization_complete = init_event
         self.lock = threading.Lock()
         self.stop_event = threading.Event()
         self.daemon = True
         self.heading = None
-        self.distance_left = None
-        self.distance_right = None
-        self.distance_back = None
-        self.distance_center = None
 
     def run(self):
         try:
             self.bno.initialize()
-            print("SensorThread: IMU initialized.")
-            #self.dist.initialise()
-            #print("SensorThread: Distance sensors initialized.")
+            print("ImuThread: IMU initialized.")
             self.initialization_complete.set()
             while not self.stop_event.is_set():
                 heading = self.bno.get_heading()
-                #dist_left = self.dist.get_distance(0)
-                #dist_center = self.dist.get_distance(2)
-                #dist_right = self.dist.get_distance(3)
-                #dist_back = self.dist.get_distance(-1)
                 with self.lock:
                     self.heading = heading
-                    #self.distance_left = dist_left
-                    #self.distance_center = dist_center
-                    #self.distance_right = dist_right
-                    #self.distance_back = dist_back
         except Exception as e:
-            print(f"SensorThread: ERROR during initialization/operation: {e}")
+            print(f"ImuThread: ERROR during initialization/operation: {e}")
             traceback.print_exc()
             self.initialization_complete.set()
         finally:
-            #print("SensorThread: Cleaning up distance sensors...")
-            #self.dist.cleanup()
             self.bno.cleanup()
-            print("SensorThread: IMU cleanup complete.")
+            print("ImuThread: IMU cleanup complete.")
 
-    def get_readings(self):
+    def get_heading(self):
         with self.lock:
-            return {
-                'heading': self.heading
-                #'distance_left': self.distance_left,
-                #'distance_center': self.distance_center,
-                #'distance_right': self.distance_right,
-                #'distance_back' : self.distance_back
-            }
+            return self.heading
 
     def stop(self):
         self.stop_event.set()
@@ -235,11 +212,11 @@ if __name__ == "__main__":
     prev_angle = 0
 
     # Start camera and sensor threads
-    sensors_initialized_event = threading.Event()
+    imu_initialized_event = threading.Event()
     camera_thread = CameraThread(camera)
     camera_thread.start()
-    sensor_thread = SensorThread(bno055, distance, sensors_initialized_event)
-    sensor_thread.start()
+    imu_thread = ImuThread(bno055, imu_initialized_event)
+    imu_thread.start()
     
     print("MainThread: Waiting for sensors to initialize...")
     sensors_initialized_event.wait()
@@ -249,9 +226,9 @@ if __name__ == "__main__":
     INITIAL_HEADING = None
     while INITIAL_HEADING is None:
         print("MainThread: Waiting for first valid heading reading...")
-        readings = sensor_thread.get_readings()
-        if readings and readings['heading'] is not None:
-            INITIAL_HEADING = readings['heading']
+        heading = imu_thread.get_heading()
+        if heading is not None:
+            INITIAL_HEADING = heading
         time.sleep(0.05)
     print(f"MainThread: Initial heading locked: {INITIAL_HEADING}")
     try:
@@ -326,7 +303,7 @@ if __name__ == "__main__":
             #     print("Button pressed. Stopping.")
             #     break
             
-            if turn_counter == 12 and not final_run_initiated and get_angular_difference(sensor_thread.get_readings()['heading'],INITIAL_HEADING)<30:
+            if turn_counter == 12 and not final_run_initiated and get_angular_difference(imu_thread.get_heading(),INITIAL_HEADING)<30:
                 print("12 turns reached. Stopping in 0.6 seconds")
                 final_run_initiated = True
                 final_run_start_time = time.monotonic()
@@ -347,11 +324,11 @@ if __name__ == "__main__":
         motor.brake()
         print("MainThread: Signaling threads to stop...")
         camera_thread.stop()
-        sensor_thread.stop()
+        imu_thread.stop()
 
         print("MainThread: Waiting for threads to complete...")
         camera_thread.join()
-        sensor_thread.join()
+        imu_thread.join()
         print("MainThread: All threads have completed.")
         
         out.release()

@@ -100,16 +100,48 @@ class CameraThread(threading.Thread):
     def stop(self):
         self.stop_event.set()
 
-class SensorThread(threading.Thread):
-    def __init__(self, bno, dist, init_event):
+class ImuThread(threading.Thread):
+    def __init__(self, bno, init_event):
         super().__init__()
         self.bno = bno
-        self.dist = dist
         self.initialization_complete = init_event
         self.lock = threading.Lock()
         self.stop_event = threading.Event()
         self.daemon = True
         self.heading = None
+
+    def run(self):
+        try:
+            self.bno.initialize()
+            print("ImuThread: IMU initialized.")
+            self.initialization_complete.set()
+            while not self.stop_event.is_set():
+                heading = self.bno.get_heading()
+                with self.lock:
+                    self.heading = heading
+        except Exception as e:
+            print(f"ImuThread: ERROR during initialization/operation: {e}")
+            traceback.print_exc()
+            self.initialization_complete.set()
+        finally:
+            self.bno.cleanup()
+            print("ImuThread: IMU cleanup complete.")
+
+    def get_heading(self):
+        with self.lock:
+            return self.heading
+
+    def stop(self):
+        self.stop_event.set()
+
+class SensorThread(threading.Thread):
+    def __init__(self, dist, init_event):
+        super().__init__()
+        self.dist = dist
+        self.initialization_complete = init_event
+        self.lock = threading.Lock()
+        self.stop_event = threading.Event()
+        self.daemon = True
         self.distance_left = None
         self.distance_right = None
         self.distance_back = None
@@ -119,8 +151,6 @@ class SensorThread(threading.Thread):
         try:
             for attempt in range(3):
                 try:
-                    print("SensorThread: Initializing IMU...")
-                    self.bno.initialize()
                     print("SensorThread: Initializing distance sensors...")
                     self.dist.initialise()
                     print("SensorThread: Both sensors initialized.")
@@ -137,7 +167,6 @@ class SensorThread(threading.Thread):
             reinit_threshold = 4
             while not self.stop_event.is_set():
                 try:
-                    heading = self.bno.get_heading()
                     readings = {}
                     for ch in sorted(self.dist._sensors.keys()):
                         val = self.dist.get_distance(ch)
@@ -148,7 +177,6 @@ class SensorThread(threading.Thread):
                             consecutive_none[ch] = 0
 
                     with self.lock:
-                        self.heading = heading
                         self.distance_left = readings.get(0)
                         self.distance_center = readings.get(2)
                         self.distance_right = readings.get(3)
@@ -180,7 +208,6 @@ class SensorThread(threading.Thread):
     def get_readings(self):
         with self.lock:
             return {
-                'heading': self.heading,
                 'distance_left': self.distance_left,
                 'distance_center': self.distance_center,
                 'distance_right': self.distance_right,
@@ -436,7 +463,7 @@ def drive_straight_with_gyro(target_heading, duration, speed, direction='forward
         motor.reverse(speed)
 
     while time.monotonic() - start_time < duration:
-        current_heading = sensor_thread.get_readings()['heading']
+        current_heading = imu_thread.get_heading()
         if current_heading is None:
             time.sleep(0.01)
             continue
@@ -541,9 +568,9 @@ def perform_initial_maneuver():
     motor.forward(MANEUVER_SPEED)
     servo.set_angle_unlimited(initial_turn_servo)
     print("Starting initial turn...")
-    print(sensor_thread.get_readings()['heading'], get_angular_difference((INITIAL_HEADING+SCAN_TRIGGER_ANGLE_DEG)%360, sensor_thread.get_readings()['heading']))
-    while get_angular_difference((INITIAL_HEADING+SCAN_TRIGGER_ANGLE_DEG)%360, sensor_thread.get_readings()['heading']) > 10:
-        print(sensor_thread.get_readings()['heading'], get_angular_difference((INITIAL_HEADING+SCAN_TRIGGER_ANGLE_DEG)%360, sensor_thread.get_readings()['heading']))
+    print(imu_thread.get_heading(), get_angular_difference((INITIAL_HEADING+SCAN_TRIGGER_ANGLE_DEG)%360, imu_thread.get_heading()))
+    while get_angular_difference((INITIAL_HEADING+SCAN_TRIGGER_ANGLE_DEG)%360, imu_thread.get_heading()) > 10:
+        print(imu_thread.get_heading(), get_angular_difference((INITIAL_HEADING+SCAN_TRIGGER_ANGLE_DEG)%360, imu_thread.get_heading()))
         time.sleep(0.01)
         pass
     motor.brake()
@@ -581,14 +608,14 @@ def perform_initial_maneuver():
     if driving_direction == 'counter-clockwise':
         if detected_block_color == 'green':
             motor.forward(60)
-            while get_angular_difference(ninety_degree_heading, sensor_thread.get_readings()['heading']) > 5:
-                servo.set_angle(steer_with_gyro(sensor_thread.get_readings()['heading'],(ninety_degree_heading+10*direction_modifier)%360))
+            while get_angular_difference(ninety_degree_heading, imu_thread.get_heading()) > 5:
+                servo.set_angle(steer_with_gyro(imu_thread.get_heading(),(ninety_degree_heading+10*direction_modifier)%360))
             action_taken = f"DRIVE_FORWARD_GREEN for {0.8}s"
             drive_straight_with_gyro(drive_target_heading, 0.8, 70, 'forward')
         elif detected_block_color == 'red':
             motor.forward(60)
-            while get_angular_difference(ninety_degree_heading, sensor_thread.get_readings()['heading']) > 5:
-                servo.set_angle(steer_with_gyro(sensor_thread.get_readings()['heading'],ninety_degree_heading))
+            while get_angular_difference(ninety_degree_heading, imu_thread.get_heading()) > 5:
+                servo.set_angle(steer_with_gyro(imu_thread.get_heading(),ninety_degree_heading))
             action_taken = f"REVERSE_BEFORE_TURN for {0.6}s"
             drive_straight_with_gyro(drive_target_heading, 0.6, 70, 'reverse')
         else:
@@ -598,14 +625,14 @@ def perform_initial_maneuver():
     else:
         if detected_block_color == 'green':
             motor.forward(60)
-            while get_angular_difference(ninety_degree_heading, sensor_thread.get_readings()['heading']) > 5:
-                servo.set_angle(steer_with_gyro(sensor_thread.get_readings()['heading'],ninety_degree_heading))
+            while get_angular_difference(ninety_degree_heading, imu_thread.get_heading()) > 5:
+                servo.set_angle(steer_with_gyro(imu_thread.get_heading(),ninety_degree_heading))
             action_taken = f"REVERSE_FOR_GREEN_CW for {REVERSE_DURATION}s"
             drive_straight_with_gyro(drive_target_heading, REVERSE_DURATION, 70, 'reverse')
         elif detected_block_color == 'red':
             motor.forward(60)
-            while get_angular_difference(ninety_degree_heading, sensor_thread.get_readings()['heading']) > 5:
-                servo.set_angle(steer_with_gyro(sensor_thread.get_readings()['heading'],ninety_degree_heading))
+            while get_angular_difference(ninety_degree_heading, imu_thread.get_heading()) > 5:
+                servo.set_angle(steer_with_gyro(imu_thread.get_heading(),ninety_degree_heading))
             action_taken = f"DRIVE_FORWARD_RED_CW for {1}s"
             drive_straight_with_gyro(drive_target_heading, 1, 70, 'forward')
         else:
@@ -620,14 +647,14 @@ def perform_initial_maneuver():
     motor.forward(70)
     #servo.set_angle(final_turn_servo)
 
-    while get_angular_difference(sensor_thread.get_readings()['heading'], INITIAL_HEADING) > 15:
-        servo.set_angle(steer_with_gyro(sensor_thread.get_readings()['heading'],INITIAL_HEADING,2))
+    while get_angular_difference(imu_thread.get_heading(), INITIAL_HEADING) > 15:
+        servo.set_angle(steer_with_gyro(imu_thread.get_heading(),INITIAL_HEADING,2))
     motor.brake()
     servo.set_angle(0)
     motor.reverse(65)
     start_time = time.monotonic()
     while time.monotonic() - start_time < 0.2:
-        servo.set_angle(-steer_with_gyro(sensor_thread.get_readings()['heading'],INITIAL_HEADING,1))
+        servo.set_angle(-steer_with_gyro(imu_thread.get_heading(),INITIAL_HEADING,1))
     time.sleep(0.5)
     motor.brake()
     print("--- Initial Maneuver Complete. Transitioning to straight driving. ---")
@@ -652,17 +679,18 @@ def parking():
     #print(sensor_thread.get_readings()['distance_back'], sensor_readings['heading'])
     while True:
         sensor_readings = sensor_thread.get_readings()
-        print(sensor_readings['distance_back'], sensor_readings['heading'])
+        heading = imu_thread.get_heading()
+        print(sensor_readings['distance_back'], heading)
         if sensor_readings['distance_back'] is not None and sensor_readings['distance_back'] < 160:
             break
-        servo.set_angle_unlimited(-steer_with_gyro(sensor_readings['heading'],(INITIAL_HEADING+90)%360, kp=1, min_servo_angle=-60, max_servo_angle=60))
+        servo.set_angle_unlimited(-steer_with_gyro(heading,(INITIAL_HEADING+90)%360, kp=1, min_servo_angle=-60, max_servo_angle=60))
         time.sleep(0.01)
     #return
     motor.forward(55) 
-    while get_angular_difference((INITIAL_HEADING+170)%360, sensor_thread.get_readings()['heading']) > 5:
-            #print(INITIAL_HEADING, sensor_thread.get_readings()['heading'])
-            sensor_readings = sensor_thread.get_readings()
-            servo.set_angle(steer_with_gyro(sensor_readings['heading'],(INITIAL_HEADING+170)%360, kp=1,min_servo_angle=-40, max_servo_angle=40))    
+    while get_angular_difference((INITIAL_HEADING+170)%360, imu_thread.get_heading()) > 5:
+        #print(INITIAL_HEADING, imu_thread.get_heading())
+        heading = imu_thread.get_heading()
+        servo.set_angle(steer_with_gyro(heading,(INITIAL_HEADING+170)%360, kp=1,min_servo_angle=-40, max_servo_angle=40))    
     motor.brake()
     servo.set_angle(0)
     first_magenta_line_passed = False
@@ -741,7 +769,7 @@ def parking():
     motor.brake()
     motor.reverse(45)
     servo.set_angle_unlimited(55)
-    while get_angular_difference((INITIAL_HEADING+100)%360, sensor_thread.get_readings()['heading']) > 10:
+    while get_angular_difference((INITIAL_HEADING+100)%360, imu_thread.get_heading()) > 10:
             pass
     motor.brake()
     print('parking first reverse turn:',sensor_thread.get_readings())
@@ -763,26 +791,26 @@ def parking():
         if dist is not None:
             if dist <= 65:
                 break
-        if get_angular_difference((INITIAL_HEADING+180)%360, sensor_thread.get_readings()['heading']) < 2:
+        if get_angular_difference((INITIAL_HEADING+180)%360, imu_thread.get_heading()) < 2:
             break
     motor.brake()
     motor.forward(35)
     while True:
         if sensor_thread.get_readings()['distance_center'] is not None and sensor_thread.get_readings()['distance_center'] < 75:
             break
-        if get_angular_difference(sensor_thread.get_readings()['heading'], (INITIAL_HEADING+180)%360) < 2:
+        if get_angular_difference(imu_thread.get_heading(), (INITIAL_HEADING+180)%360) < 2:
             break
-        servo.set_angle(steer_with_gyro(sensor_thread.get_readings()['heading'],(INITIAL_HEADING+180)%360, kp=1.5))
+        servo.set_angle(steer_with_gyro(imu_thread.get_heading(),(INITIAL_HEADING+180)%360, kp=1.5))
         time.sleep(0.01)
     motor.brake()
     motor.reverse(35)
     while True:
         dist = sensor_thread.get_readings()['distance_back']
-        servo.set_angle(-steer_with_gyro(sensor_thread.get_readings()['heading'],(INITIAL_HEADING+180)%360, kp=1.5))
+        servo.set_angle(-steer_with_gyro(imu_thread.get_heading(),(INITIAL_HEADING+180)%360, kp=1.5))
         if dist is not None:
             if dist <= 45:
                 break
-        if get_angular_difference((INITIAL_HEADING+180)%360, sensor_thread.get_readings()['heading']) < 2:
+        if get_angular_difference((INITIAL_HEADING+180)%360, imu_thread.get_heading()) < 2:
             break
     motor.brake()
 
@@ -798,24 +826,25 @@ def parking2():
             print(f"Distance is {distance_center}. Exiting loop.")
             break
         print(distance_center)
-        servo.set_angle(steer_with_gyro(sensor_readings['heading'], (INITIAL_HEADING) % 360, kp=1))
+        servo.set_angle(steer_with_gyro(imu_thread.get_heading(), (INITIAL_HEADING) % 360, kp=1))
         time.sleep(0.01)
     motor.reverse(50)
     #return
     #print(sensor_thread.get_readings()['distance_back'], sensor_readings['heading'])
     while True:
         sensor_readings = sensor_thread.get_readings()
-        print(sensor_readings['distance_back'], sensor_readings['heading'])
+        heading = imu_thread.get_heading()
+        print(sensor_readings['distance_back'], heading)
         if sensor_readings['distance_back'] is not None and sensor_readings['distance_back'] < 160:
             break
-        servo.set_angle_unlimited(-steer_with_gyro(sensor_readings['heading'],(INITIAL_HEADING-90)%360, kp=2, min_servo_angle=-60, max_servo_angle=60))
+        servo.set_angle_unlimited(-steer_with_gyro(heading,(INITIAL_HEADING-90)%360, kp=2, min_servo_angle=-60, max_servo_angle=60))
         time.sleep(0.01)
     #return
     motor.forward(55) 
-    while get_angular_difference((INITIAL_HEADING-170)%360, sensor_thread.get_readings()['heading']) > 5:
-            #print(INITIAL_HEADING, sensor_thread.get_readings()['heading'])
-            sensor_readings = sensor_thread.get_readings()
-            servo.set_angle(steer_with_gyro(sensor_readings['heading'],(INITIAL_HEADING-170)%360, kp=1,min_servo_angle=-40, max_servo_angle=40))   
+    while get_angular_difference((INITIAL_HEADING-170)%360, imu_thread.get_heading()) > 5:
+            #print(INITIAL_HEADING, imu_thread.get_heading())
+            heading = imu_thread.get_heading()
+            servo.set_angle(steer_with_gyro(heading,(INITIAL_HEADING-170)%360, kp=1,min_servo_angle=-40, max_servo_angle=40))   
     ROI_Y_START = 160
     ROI_X_END = 40
     TARGET_Y_OFFSET_FROM_BOTTOM = 185
@@ -895,7 +924,7 @@ def parking2():
     motor.brake()
     motor.reverse(45)
     servo.set_angle_unlimited(-60)
-    while get_angular_difference((INITIAL_HEADING-100)%360, sensor_thread.get_readings()['heading']) > 10:
+    while get_angular_difference((INITIAL_HEADING-100)%360, imu_thread.get_heading()) > 10:
             pass
     motor.brake()
     print('parking first reverse turn:',sensor_thread.get_readings())
@@ -918,7 +947,7 @@ def parking2():
         if dist is not None:
             if dist <= 65:
                 break
-        if get_angular_difference((INITIAL_HEADING+180)%360, sensor_thread.get_readings()['heading']) < 2:
+        if get_angular_difference((INITIAL_HEADING+180)%360, imu_thread.get_heading()) < 2:
             break
         if time.monotonic() - manuver_start_time > 3:
             break
@@ -927,19 +956,19 @@ def parking2():
     while True:
         if sensor_thread.get_readings()['distance_center'] is not None and sensor_thread.get_readings()['distance_center'] < 75:
             break
-        if get_angular_difference(sensor_thread.get_readings()['heading'], (INITIAL_HEADING+180)%360) < 2:
+        if get_angular_difference(imu_thread.get_heading(), (INITIAL_HEADING+180)%360) < 2:
             break
-        servo.set_angle(steer_with_gyro(sensor_thread.get_readings()['heading'],(INITIAL_HEADING+180)%360, kp=1.5))
+        servo.set_angle(steer_with_gyro(imu_thread.get_heading(),(INITIAL_HEADING+180)%360, kp=1.5))
         time.sleep(0.01)
     motor.brake()
     motor.reverse(35)
     while True:
         dist = sensor_thread.get_readings()['distance_back']
-        servo.set_angle(-steer_with_gyro(sensor_thread.get_readings()['heading'],(INITIAL_HEADING+180)%360, kp=1.5))
+        servo.set_angle(-steer_with_gyro(imu_thread.get_heading(),(INITIAL_HEADING+180)%360, kp=1.5))
         if dist is not None:
             if dist <= 45:
                 break
-        if get_angular_difference((INITIAL_HEADING+180)%360, sensor_thread.get_readings()['heading']) < 2:
+        if get_angular_difference((INITIAL_HEADING+180)%360, imu_thread.get_heading()) < 2:
             break
     motor.brake()
     
@@ -968,16 +997,24 @@ if __name__ == "__main__":
     turn_counter = 0
     angle = 0
     prevangle = 0
-
-    sensors_initialized_event = threading.Event()
+    
     camera_thread = CameraThread(camera)
     camera_thread.start()
-    sensor_thread = SensorThread(bno055, distance, sensors_initialized_event)
+        
+    sensors_initialized_event = threading.Event()
+    sensor_thread = SensorThread(distance, sensors_initialized_event)
     sensor_thread.start()
-    
     print("MainThread: Waiting for sensors to initialize...")
     sensors_initialized_event.wait() 
-    print("MainThread: Sensors are ready. Proceeding with main logic.")    
+    print("MainThread: Sensors are ready.")    
+
+    imu_initialized_event = threading.Event()
+    imu_thread = ImuThread(bno055, imu_initialized_event)
+    imu_thread.start()
+    print("MainThread: Waiting for IMU to initialize...")    
+    imu_initialized_event.wait()
+    print("MainThread: IMU is ready. Proceeding with main logic.")    
+    
     time.sleep(1)
     led.on()
     button.wait_for_press()
@@ -1013,9 +1050,9 @@ if __name__ == "__main__":
     INITIAL_HEADING = None
     while INITIAL_HEADING is None:
         print("MainThread: Waiting for first valid heading reading...")
-        readings = sensor_thread.get_readings()
-        if readings and readings['heading'] is not None:
-            INITIAL_HEADING = readings['heading']
+        heading = imu_thread.get_heading()
+        if heading is not None:
+            INITIAL_HEADING = heading
         time.sleep(0.05)
     print(f"MainThread: Initial heading locked: {INITIAL_HEADING}")
 
@@ -1127,8 +1164,10 @@ if __name__ == "__main__":
                 wall_inner_left_size = sum(obj['area'] for obj in detected_walls if obj['type'] == 'wall_inner_left')
                 wall_inner_right_size = sum(obj['area'] for obj in detected_walls if obj['type'] == 'wall_inner_right')
                 if left_pixel_size<100 and (right_pixel_size + wall_inner_right_size)>100:
+                    #DEV right_pixel_size *= 2
                     right_pixel_size += 25000
                 elif right_pixel_size<100 and (left_pixel_size + wall_inner_left_size)>100:
+                    #DEV left_pixel_size *= 2
                     left_pixel_size += 25000
                 
                 debug.extend([left_pixel_size, right_pixel_size])
