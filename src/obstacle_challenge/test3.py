@@ -202,7 +202,6 @@ class SensorThread(threading.Thread):
         finally:
             print("SensorThread: Cleaning up distance sensors...")
             self.dist.cleanup()
-            self.bno.cleanup()
             print("SensorThread: Distance sensor cleanup complete.")
 
     def get_readings(self):
@@ -1164,10 +1163,10 @@ if __name__ == "__main__":
                 wall_inner_left_size = sum(obj['area'] for obj in detected_walls if obj['type'] == 'wall_inner_left')
                 wall_inner_right_size = sum(obj['area'] for obj in detected_walls if obj['type'] == 'wall_inner_right')
                 if left_pixel_size<100 and (right_pixel_size + wall_inner_right_size)>100:
-                    #DEV right_pixel_size *= 2
+                    right_pixel_size *= 2
                     right_pixel_size += 25000
                 elif right_pixel_size<100 and (left_pixel_size + wall_inner_left_size)>100:
-                    #DEV left_pixel_size *= 2
+                    left_pixel_size *= 2
                     left_pixel_size += 25000
                 
                 debug.extend([left_pixel_size, right_pixel_size])
@@ -1234,10 +1233,12 @@ if __name__ == "__main__":
         print("MainThread: Signaling threads to stop...")
         camera_thread.stop()
         sensor_thread.stop()
+        imu_thread.stop()
 
         print("MainThread: Waiting for threads to complete...")
         camera_thread.join()
         sensor_thread.join()
+        imu_thread.join()
         print("MainThread: All threads have completed.")
         motor.brake()
         out.release()
