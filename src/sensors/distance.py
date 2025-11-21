@@ -184,6 +184,51 @@ def initialise(i2c_bus_num=I2C_BUS_MAIN, mux_address=TCA_ADDRESS, urm09_address=
     print("INFO: Sensor initialization complete.")
     return True
 
+def reinit_sensor(channel, urm09_address=URM09_ADDRESS):
+    global _sensors, _sensor_types, _mux
+    print("Reinitializing sensor on channel", channel)
+    try:
+        if channel == -1:
+            if not VL53L8CX_AVAILABLE:
+                return False
+            try:
+                vl = VL53L8CX()
+                vl.resolution = VL53L8CX_RESOLUTION_4X4
+                vl.start_ranging()
+                _sensors[-1] = vl
+                _sensor_types[-1] = 'VL53L8CX'
+                return True
+            except Exception:
+                return False
+
+        if _mux is None:
+            return False
+
+        channel_bus = _mux[channel]
+        try:
+            vl53 = adafruit_vl53l1x.VL53L1X(channel_bus)
+            vl53.distance_mode = 1
+            vl53.timing_budget = 50
+            vl53.start_ranging()
+            _sensors[channel] = vl53
+            _sensor_types[channel] = 'VL53L1X'
+            return True
+        except Exception:
+            pass
+
+        try:
+            urm = DFRobot_URM09_IIC_CircuitPython(channel_bus, addr=urm09_address)
+            time.sleep(0.05)
+            if urm.get_distance() is not None:
+                _sensors[channel] = urm
+                _sensor_types[channel] = 'URM09'
+                return True
+            else:
+                return False
+        except Exception:
+            return False
+    except Exception:
+        return False
 
 # ===============================================================
 # ===== NO CHANGES NEEDED BELOW THIS LINE =======================

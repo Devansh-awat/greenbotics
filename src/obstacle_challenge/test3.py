@@ -10,6 +10,7 @@ import threading
 from gpiozero import Button, LED
 import os
 import sys
+import traceback
 from datetime import datetime
 
 MOTOR_SPEED = 92
@@ -81,11 +82,11 @@ class CameraThread(threading.Thread):
         self.camera = camera_instance
         self.latest_frame = None
         self.lock = threading.Lock()
-        self.running = True
+        self.stop_event = threading.Event()
         self.daemon = True
 
     def run(self):
-        while self.running:
+        while not self.stop_event.is_set():
             frame = self.camera.capture_frame()
             with self.lock:
                 self.latest_frame = frame
@@ -97,7 +98,7 @@ class CameraThread(threading.Thread):
             return None
 
     def stop(self):
-        self.running = False
+        self.stop_event.set()
 
 class SensorThread(threading.Thread):
     def __init__(self, bno, dist, init_event):
@@ -106,7 +107,7 @@ class SensorThread(threading.Thread):
         self.dist = dist
         self.initialization_complete = init_event
         self.lock = threading.Lock()
-        self.running = True
+        self.stop_event = threading.Event()
         self.daemon = True
         self.heading = None
         self.distance_left = None
@@ -116,23 +117,60 @@ class SensorThread(threading.Thread):
 
     def run(self):
         try:
-            self.bno.initialize()
-            print("SensorThread: Initializing distance sensors...")
-            self.dist.initialise()
-            print("SensorThread: Distance sensors initialized.")
+            for attempt in range(3):
+                try:
+                    print("SensorThread: Initializing IMU...")
+                    self.bno.initialize()
+                    print("SensorThread: Initializing distance sensors...")
+                    self.dist.initialise()
+                    print("SensorThread: Both sensors initialized.")
+                    break
+                except Exception as e:
+                    print(f"SensorThread: ERROR during initialization: {e}")
+                    traceback.print_exc()
+                time.sleep(0.3)
+            time.sleep(0.3)
+            print("SensorThread: Initialization complete flag set.")
             self.initialization_complete.set()
-            while self.running:
-                heading = self.bno.get_heading()
-                dist_left = self.dist.get_distance(0)
-                dist_center = self.dist.get_distance(2)
-                dist_right = self.dist.get_distance(3)
-                dist_back = self.dist.get_distance(-1)
-                with self.lock:
-                    self.heading = heading
-                    self.distance_left = dist_left
-                    self.distance_center = dist_center
-                    self.distance_right = dist_right
-                    self.distance_back = dist_back
+
+            consecutive_none = {ch: 0 for ch in distance._sensors.keys()}
+            reinit_threshold = 4
+            while not self.stop_event.is_set():
+                try:
+                    heading = self.bno.get_heading()
+                    readings = {}
+                    for ch in sorted(self.dist._sensors.keys()):
+                        val = self.dist.get_distance(ch)
+                        readings[ch] = val
+                        if val is None:
+                            consecutive_none[ch] = consecutive_none.get(ch, 0) + 1
+                        else:
+                            consecutive_none[ch] = 0
+
+                    with self.lock:
+                        self.heading = heading
+                        self.distance_left = readings.get(0)
+                        self.distance_center = readings.get(2)
+                        self.distance_right = readings.get(3)
+                        self.distance_back = readings.get(-1)
+
+                    for ch, count in list(consecutive_none.items()):
+                        if count >= reinit_threshold:
+                            ok = distance.reinit_sensor(ch)
+                            consecutive_none[ch] = 0 if ok else count
+
+                    time.sleep(0.02) # account for timing budget 
+                except Exception as e:
+                    print(f"SensorThread: ERROR during sensor reading: {e}")
+                    traceback.print_exc()
+                    time.sleep(0.1)
+        
+        except Exception as e:
+            print(f"SensorThread: ERROR during initialization/operation: {e}")
+            traceback.print_exc()
+            # Still set the event so main thread doesn't hang forever
+            self.initialization_complete.set()
+        
         finally:
             print("SensorThread: Cleaning up distance sensors...")
             self.dist.cleanup()
@@ -150,7 +188,7 @@ class SensorThread(threading.Thread):
             }
 
     def stop(self):
-        self.running = False
+        self.stop_event.set()
 
 def process_video_frame(frame):
     processed_data = {
@@ -1143,6 +1181,10 @@ if __name__ == "__main__":
                 print(run_time)
                 motor.brake()
                 break
+
+    except Exception as e:
+        print(f"MainThread: ERROR during execution: {e}")
+        traceback.print_exc()        
 
     finally:
         motor.brake()

@@ -173,10 +173,14 @@ class VL53L8CX:
     def get_data(self):
         results = VL53L8CX_ResultsData()
         is_ready = self.uld_lib.VL53L8CX_wait_for_dataready(ctypes.byref(self.dev.platform))
+        if not is_ready:
+            print("Warning: Data not ready from VL53L8CX sensor.")
         if is_ready:
             status = self.uld_lib.vl53l8cx_get_ranging_data(self.p_dev, ctypes.byref(results))
             if status == 0:
                 return results
+            else:
+                print(f"Warning: Failed to get ranging data from VL53L8CX, status {status}, results: {results}")
         return None
 
     def __del__(self):
