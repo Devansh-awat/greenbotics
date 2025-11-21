@@ -218,9 +218,9 @@ if __name__ == "__main__":
     imu_thread = ImuThread(bno055, imu_initialized_event)
     imu_thread.start()
     
-    print("MainThread: Waiting for sensors to initialize...")
-    sensors_initialized_event.wait()
-    print("MainThread: Sensors are ready. Proceeding with main logic.")  
+    print("MainThread: Waiting for IMU to initialize...")
+    imu_initialized_event.wait()
+    print("MainThread: IMU is ready. Proceeding with main logic.")  
     led.on()
     button.wait_for_press()
     INITIAL_HEADING = None
