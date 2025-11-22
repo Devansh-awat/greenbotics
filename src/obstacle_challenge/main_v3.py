@@ -2,7 +2,6 @@ from collections import deque
 import time
 import queue
 from src.obstacle_challenge.config import LOWER_RED_1, UPPER_RED_1, LOWER_RED_2, UPPER_RED_2, LOWER_GREEN, UPPER_GREEN
-from src.obstacle_challenge.main import get_angular_difference
 from src.sensors import bno055, camera, distance
 from src.motors import motor, servo
 import numpy as np
@@ -247,6 +246,16 @@ class SensorThread(threading.Thread):
 
     def stop(self):
         self.stop_event.set()
+
+def get_angular_difference(angle1, angle2):
+    if angle1 is None or angle2 is None:
+        return 360
+    diff = angle1 - angle2
+    while diff <= -180:
+        diff += 360
+    while diff > 180:
+        diff -= 360
+    return abs(diff)
 
 def process_video_frame(frame):
     processed_data = {

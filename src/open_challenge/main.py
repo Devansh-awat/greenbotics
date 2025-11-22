@@ -10,8 +10,7 @@ import traceback
 from datetime import datetime
 
 # Import all settings from the new config file
-from src.obstacle_challenge.main import get_angular_difference
-from src.obstacle_challenge.test3 import steer_with_gyro
+from src.obstacle_challenge.main_v3 import get_angular_difference
 import src.open_challenge.config as config
 
 # Import hardware control modules

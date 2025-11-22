@@ -10,7 +10,7 @@ from datetime import datetime
 from src.obstacle_challenge import config#, neopixel
 from src.motors import motor, servo
 from src.sensors import camera, bno055, vl53l1x
-from src.obstacle_challenge.utils import FPSCounter, SafetyMonitor
+from src.obstacle_challenge.nationals.utils import FPSCounter, SafetyMonitor
 
 
 # ==============================================================================
