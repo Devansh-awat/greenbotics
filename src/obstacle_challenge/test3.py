@@ -1,5 +1,6 @@
 from collections import deque
 import time
+import queue
 from src.obstacle_challenge.config import LOWER_RED_1, UPPER_RED_1, LOWER_RED_2, UPPER_RED_2, LOWER_GREEN, UPPER_GREEN
 from src.obstacle_challenge.main import get_angular_difference
 from src.sensors import bno055, camera, distance
@@ -15,7 +16,7 @@ from datetime import datetime
 
 MOTOR_SPEED = 92
 
-ORANGE_COOLDOWN_FRAMES = 50
+ORANGE_COOLDOWN_FRAMES = 80
 ORANGE_DETECTION_HISTORY_LENGTH = 4
 
 WALL_THRESHOLD = 200
@@ -84,17 +85,19 @@ class CameraThread(threading.Thread):
         self.lock = threading.Lock()
         self.stop_event = threading.Event()
         self.daemon = True
+        self.frame_counter = 0
 
     def run(self):
         while not self.stop_event.is_set():
             frame = self.camera.capture_frame()
             with self.lock:
+                self.frame_counter += 1
                 self.latest_frame = frame
 
     def get_frame(self):
         with self.lock:
             if self.latest_frame is not None:
-                return self.latest_frame.copy()
+                return self.latest_frame.copy(), self.frame_counter
             return None
 
     def stop(self):
@@ -130,6 +133,35 @@ class ImuThread(threading.Thread):
     def get_heading(self):
         with self.lock:
             return self.heading
+
+    def stop(self):
+        self.stop_event.set()
+
+class VideoWriterThread(threading.Thread):
+    def __init__(self, path, fourcc, fps, frame_size):
+        super().__init__()
+        self.out = cv2.VideoWriter(path, fourcc, fps, frame_size)
+        self.queue = queue.Queue()
+        self.stop_event = threading.Event()
+        self.daemon = True
+
+    def run(self):
+        while not self.stop_event.is_set() or not self.queue.empty():
+            try:
+                frame = self.queue.get(timeout=0.1)
+                self.out.write(frame)
+                self.queue.task_done()
+            except queue.Empty:
+                continue
+            except:
+                print(f"VideoWriterThread: ERROR writing frame")
+                traceback.print_exc()
+                continue
+        self.out.release()
+
+    def write(self, frame):
+        if not self.stop_event.is_set():
+            self.queue.put(frame)
 
     def stop(self):
         self.stop_event.set()
@@ -226,93 +258,185 @@ def process_video_frame(frame):
         'detected_close_black': []
     }
     
-    frame = cv2.GaussianBlur(frame,(1,7),0)
-    hsv_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+    # frame = cv2.GaussianBlur(frame,(1,7),0) # Commented out in original? No, it was active.
+    # Global Slicing Constants
+    GLOBAL_Y_OFFSET = 100
+    GLOBAL_Y_END = 290
+    SLICE_HEIGHT = GLOBAL_Y_END - GLOBAL_Y_OFFSET
 
-    mask_black = cv2.inRange(hsv_frame, LOWER_BLACK, UPPER_BLACK)
-    mask_red1 = cv2.inRange(hsv_frame, LOWER_RED_1, UPPER_RED_1)
-    mask_red2 = cv2.inRange(hsv_frame, LOWER_RED_2, UPPER_RED_2)
-    mask_red = cv2.bitwise_or(mask_red1, mask_red2)
-    mask_green = cv2.inRange(hsv_frame, LOWER_GREEN, UPPER_GREEN)
-    mask_orange = cv2.inRange(hsv_frame, LOWER_ORANGE, UPPER_ORANGE)
-    mask_magenta = cv2.inRange(hsv_frame, LOWER_MAGENTA, UPPER_MAGENTA)
-    # DEVANSH REVIEW
-    #kernel = np.ones((5, 5), np.uint8)
-    #mask_magenta = cv2.morphologyEx(mask_magenta, cv2.MORPH_OPEN, kernel)
-    mask_blue = cv2.inRange(hsv_frame, LOWER_BLUE, UPPER_BLUE)
+    # Slice the frame first
+    frame_slice = frame[GLOBAL_Y_OFFSET:GLOBAL_Y_END, :]
+    frame_slice = cv2.GaussianBlur(frame_slice, (1, 7), 0)
+    hsv_slice = cv2.cvtColor(frame_slice, cv2.COLOR_BGR2HSV)
 
-    mask_red_or_green = cv2.bitwise_or(mask_red, mask_green)
-    mask_red_or_green_or_blue = cv2.bitwise_or(mask_red_or_green, mask_blue)
+    # --- 1. Crop and Detect (Relative to Slice) ---
+
+    # Main Blocks ROI (Red, Green, Magenta)
+    # full_frame_roi = (0, 100, 640, 165) -> y=100 in global is y=0 in slice
+    mx, my, mw, mh = full_frame_roi
+    my_slice = my - GLOBAL_Y_OFFSET
+    # Ensure we don't go out of bounds
+    my_slice = max(0, my_slice)
+    
+    main_crop = hsv_slice[my_slice:my_slice+mh, mx:mx+mw]
+    
+    mask_red1_main = cv2.inRange(main_crop, LOWER_RED_1, UPPER_RED_1)
+    mask_red2_main = cv2.inRange(main_crop, LOWER_RED_2, UPPER_RED_2)
+    mask_red_main = cv2.bitwise_or(mask_red1_main, mask_red2_main)
+    mask_green_main = cv2.inRange(main_crop, LOWER_GREEN, UPPER_GREEN)
+    mask_magenta_main = cv2.inRange(main_crop, LOWER_MAGENTA, UPPER_MAGENTA)
+
+    # Line ROI (Orange, Blue)
+    # line_roi_y = 200 -> y=200 in global is y=100 in slice
+    lx, ly, lw, lh = line_roi_x, line_roi_y, line_roi_w, line_roi_h
+    ly_slice = ly - GLOBAL_Y_OFFSET
+    
+    line_crop = hsv_slice[ly_slice:ly_slice+lh, lx:lx+lw]
+    
+    mask_orange_line = cv2.inRange(line_crop, LOWER_ORANGE, UPPER_ORANGE)
+    mask_blue_line = cv2.inRange(line_crop, LOWER_BLUE, UPPER_BLUE)
+
+    # Close Blocks ROI (Red, Green, Magenta)
+    # close_block_roi = (250, 230, 140, 10) -> y=230 in global is y=130 in slice
+    cx, cy, cw, ch = close_block_roi
+    cy_slice = cy - GLOBAL_Y_OFFSET
+    
+    close_crop = hsv_slice[cy_slice:cy_slice+ch, cx:cx+cw]
+    
+    mask_red1_close = cv2.inRange(close_crop, LOWER_RED_1, UPPER_RED_1)
+    mask_red2_close = cv2.inRange(close_crop, LOWER_RED_2, UPPER_RED_2)
+    mask_red_close = cv2.bitwise_or(mask_red1_close, mask_red2_close)
+    mask_green_close = cv2.inRange(close_crop, LOWER_GREEN, UPPER_GREEN)
+    mask_magenta_close = cv2.inRange(close_crop, LOWER_MAGENTA, UPPER_MAGENTA)
+
+    # Close Black ROI
+    # close_y = 120 -> y=120 in global is y=20 in slice
+    cbx, cby, cbw, cbh = close_x, close_y, close_w, close_h
+    cby_slice = cby - GLOBAL_Y_OFFSET
+
+    # --- 2. Reconstruct Global Masks (Slice Size) for Wall/Black Detection ---
+    
+    global_red_mask = np.zeros((SLICE_HEIGHT, FRAME_WIDTH), dtype="uint8")
+    global_green_mask = np.zeros((SLICE_HEIGHT, FRAME_WIDTH), dtype="uint8")
+    global_blue_mask = np.zeros((SLICE_HEIGHT, FRAME_WIDTH), dtype="uint8")
+    global_magenta_mask = np.zeros((SLICE_HEIGHT, FRAME_WIDTH), dtype="uint8")
+
+    # Paste Main Blocks
+    global_red_mask[my_slice:my_slice+mh, mx:mx+mw] = cv2.bitwise_or(global_red_mask[my_slice:my_slice+mh, mx:mx+mw], mask_red_main)
+    global_green_mask[my_slice:my_slice+mh, mx:mx+mw] = cv2.bitwise_or(global_green_mask[my_slice:my_slice+mh, mx:mx+mw], mask_green_main)
+    global_magenta_mask[my_slice:my_slice+mh, mx:mx+mw] = cv2.bitwise_or(global_magenta_mask[my_slice:my_slice+mh, mx:mx+mw], mask_magenta_main)
+
+    # Paste Close Blocks
+    global_red_mask[cy_slice:cy_slice+ch, cx:cx+cw] = cv2.bitwise_or(global_red_mask[cy_slice:cy_slice+ch, cx:cx+cw], mask_red_close)
+    global_green_mask[cy_slice:cy_slice+ch, cx:cx+cw] = cv2.bitwise_or(global_green_mask[cy_slice:cy_slice+ch, cx:cx+cw], mask_green_close)
+    global_magenta_mask[cy_slice:cy_slice+ch, cx:cx+cw] = cv2.bitwise_or(global_magenta_mask[cy_slice:cy_slice+ch, cx:cx+cw], mask_magenta_close)
+
+    # Paste Line Blocks (Blue)
+    global_blue_mask[ly_slice:ly_slice+lh, lx:lx+lw] = cv2.bitwise_or(global_blue_mask[ly_slice:ly_slice+lh, lx:lx+lw], mask_blue_line)
+
+    # --- 3. Wall and Black Detection ---
+    
+    mask_black = cv2.inRange(hsv_slice, LOWER_BLACK, UPPER_BLACK)
+    
+    mask_red_or_green = cv2.bitwise_or(global_red_mask, global_green_mask)
+    mask_red_or_green_or_blue = cv2.bitwise_or(mask_red_or_green, global_blue_mask)
+    
     pure_black_mask = cv2.bitwise_and(mask_black, cv2.bitwise_not(mask_red_or_green_or_blue))
-    black_or_magenta_mask = cv2.bitwise_or(pure_black_mask, mask_magenta)
+    black_or_magenta_mask = cv2.bitwise_or(pure_black_mask, global_magenta_mask)
 
-    final_mask_walls = cv2.bitwise_and(pure_black_mask, roi_mask_walls)
-    final_mask_main_red = cv2.bitwise_and(mask_red, roi_mask_main_blocks)
-    final_mask_main_green = cv2.bitwise_and(mask_green, roi_mask_main_blocks)
-    final_mask_close_red = cv2.bitwise_and(mask_red, roi_mask_close_blocks)
-    final_mask_close_green = cv2.bitwise_and(mask_green, roi_mask_close_blocks)
-    final_mask_orange = cv2.bitwise_and(mask_orange, roi_mask_line)
-    final_mask_blue = cv2.bitwise_and(mask_blue,roi_mask_line)
-    final_mask_magenta = cv2.bitwise_and(mask_magenta, roi_mask_magenta)
-    final_mask_close_black = cv2.bitwise_and(black_or_magenta_mask, roi_mask_close_black)
-    final_mask_close_magenta = cv2.bitwise_and(mask_magenta, roi_mask_close_blocks)
+    # Sliced ROI Masks
+    roi_mask_walls_slice = roi_mask_walls[GLOBAL_Y_OFFSET:GLOBAL_Y_END, :]
+    roi_mask_close_black_slice = roi_mask_close_black[GLOBAL_Y_OFFSET:GLOBAL_Y_END, :]
 
-    contours, _ = cv2.findContours(final_mask_magenta, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    if contours:
-        biggest_contour = max(contours, key=cv2.contourArea)
-        area = cv2.contourArea(biggest_contour)
+    final_mask_walls = cv2.bitwise_and(pure_black_mask, roi_mask_walls_slice)
+    final_mask_close_black = cv2.bitwise_and(black_or_magenta_mask, roi_mask_close_black_slice)
 
-        if area > MAGENTA_MIN_AREA:
-            M = cv2.moments(biggest_contour)
-            if M["m00"] != 0:
-                cx = int(M["m10"] / M["m00"])
-                cy = int(M["m01"] / M["m00"])
+    # --- 4. Contour Finding (Fast-Fail) ---
 
-                leftmost_x = biggest_contour[:, 0, 0].min()
-                rightmost_x = biggest_contour[:, 0, 0].max()
-
-                dist_to_center_left = abs(leftmost_x - FRAME_MIDPOINT_X)
-                dist_to_center_right = abs(rightmost_x - FRAME_MIDPOINT_X)
-
-                if dist_to_center_left <= dist_to_center_right:
-                    target_x = leftmost_x
-                else:
-                    target_x = rightmost_x
-                
-                processed_data['detected_magenta'].append({
-                    'type': 'magenta_block',
-                    'area': area,
-                    'centroid': (cx, cy),
-                    'contour': biggest_contour,
-                    'target_x': target_x,
-                    'target_y': cy
-                })
-
-    all_detected_blocks = []
-    block_masks = {
-        'main_red': final_mask_main_red, 'main_green': final_mask_main_green,
-        'close_red': final_mask_close_red, 'close_green': final_mask_close_green,
-        'close_magenta': final_mask_close_magenta
-    }
-    block_types = {
-        'main_red': ('block', 'red', BLOCK_MIN_AREA),
-        'main_green': ('block', 'green', BLOCK_MIN_AREA),
-        'close_red': ('close_block', 'red', CLOSE_BLOCK_MIN_AREA),
-        'close_green': ('close_block', 'green', CLOSE_BLOCK_MIN_AREA),
-        'close_magenta': ('close_block', 'magenta', CLOSE_BLOCK_MIN_AREA)
-    }
-    for name, mask in block_masks.items():
-        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    # Magenta (Main)
+    # We already have mask_magenta_main from the crop.
+    # But original code used final_mask_magenta = bitwise_and(mask_magenta, roi_mask_magenta)
+    # roi_mask_magenta was full_frame_roi. So mask_magenta_main IS the correct mask.
+    
+    if cv2.countNonZero(mask_magenta_main) > 0:
+        contours, _ = cv2.findContours(mask_magenta_main, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         if contours:
             biggest_contour = max(contours, key=cv2.contourArea)
             area = cv2.contourArea(biggest_contour)
-            b_type, b_color, min_area = block_types[name]
-            if area > min_area:
+
+            if area > MAGENTA_MIN_AREA:
                 M = cv2.moments(biggest_contour)
                 if M["m00"] != 0:
-                    cx = int(M["m10"] / M["m00"])
-                    cy = int(M["m01"] / M["m00"])
-                    all_detected_blocks.append({'type': b_type, 'color': b_color, 'area': area, 'centroid': (cx, cy), 'contour': biggest_contour})
+                    # Correct coordinates
+                    # cx is relative to crop, so add mx (which is relative to slice? No, mx is absolute X)
+                    # cy is relative to crop, so add my_slice (relative to slice) + GLOBAL_Y_OFFSET (absolute)
+                    # Actually, my is absolute Y. So my_slice + GLOBAL_Y_OFFSET = my.
+                    # So we can just add mx and my.
+                    cx = int(M["m10"] / M["m00"]) + mx
+                    cy = int(M["m01"] / M["m00"]) + my
+
+                    # Correct contour for drawing/display if needed
+                    biggest_contour_global = biggest_contour + [mx, my]
+
+                    leftmost_x = biggest_contour_global[:, 0, 0].min()
+                    rightmost_x = biggest_contour_global[:, 0, 0].max()
+
+                    dist_to_center_left = abs(leftmost_x - FRAME_MIDPOINT_X)
+                    dist_to_center_right = abs(rightmost_x - FRAME_MIDPOINT_X)
+
+                    if dist_to_center_left <= dist_to_center_right:
+                        target_x = leftmost_x
+                    else:
+                        target_x = rightmost_x
+                    
+                    processed_data['detected_magenta'].append({
+                        'type': 'magenta_block',
+                        'area': area,
+                        'centroid': (cx, cy),
+                        'contour': biggest_contour_global,
+                        'target_x': target_x,
+                        'target_y': cy
+                    })
+
+    # Blocks (Red, Green, Magenta - Main & Close)
+    
+    # Helper function to process block contours
+    def process_block_contours(mask, offset_x, offset_y, b_type, b_color, min_area):
+        if cv2.countNonZero(mask) > 0:
+            contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            if contours:
+                biggest_contour = max(contours, key=cv2.contourArea)
+                area = cv2.contourArea(biggest_contour)
+                if area > min_area:
+                    M = cv2.moments(biggest_contour)
+                    if M["m00"] != 0:
+                        cx = int(M["m10"] / M["m00"]) + offset_x
+                        cy = int(M["m01"] / M["m00"]) + offset_y
+                        biggest_contour_global = biggest_contour + [offset_x, offset_y]
+                        return {'type': b_type, 'color': b_color, 'area': area, 'centroid': (cx, cy), 'contour': biggest_contour_global}
+        return None
+
+    all_detected_blocks = []
+    
+    # Main Red
+    res = process_block_contours(mask_red_main, mx, my, 'block', 'red', BLOCK_MIN_AREA)
+    if res: all_detected_blocks.append(res)
+    
+    # Main Green
+    res = process_block_contours(mask_green_main, mx, my, 'block', 'green', BLOCK_MIN_AREA)
+    if res: all_detected_blocks.append(res)
+
+    # Close Red
+    res = process_block_contours(mask_red_close, cx, cy, 'close_block', 'red', CLOSE_BLOCK_MIN_AREA)
+    if res: all_detected_blocks.append(res)
+
+    # Close Green
+    res = process_block_contours(mask_green_close, cx, cy, 'close_block', 'green', CLOSE_BLOCK_MIN_AREA)
+    if res: all_detected_blocks.append(res)
+
+    # Close Magenta
+    res = process_block_contours(mask_magenta_close, cx, cy, 'close_block', 'magenta', CLOSE_BLOCK_MIN_AREA)
+    if res: all_detected_blocks.append(res)
 
     main_blocks = [b for b in all_detected_blocks if b['type'] == 'block']
     other_blocks = [b for b in all_detected_blocks if b['type'] != 'block']
@@ -321,61 +445,72 @@ def process_video_frame(frame):
         main_blocks = [lowest_main_block]
     processed_data['detected_blocks'] = main_blocks + other_blocks
     
-    contours, _ = cv2.findContours(final_mask_orange, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    if contours:
-        biggest_contour = max(contours, key=cv2.contourArea)
-        area = cv2.contourArea(biggest_contour)
-        if area > 20:
-            M = cv2.moments(biggest_contour)
-            if M["m00"] != 0:
-                cx = int(M["m10"] / M["m00"])
-                cy = int(M["m01"] / M["m00"])
-                processed_data['detected_orange'].append({'type': 'orange_block', 'color': 'orange', 'area': area, 'centroid': (cx, cy), 'contour': biggest_contour})
+    # Orange (Line)
+    if cv2.countNonZero(mask_orange_line) > 0:
+        contours, _ = cv2.findContours(mask_orange_line, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        if contours:
+            biggest_contour = max(contours, key=cv2.contourArea)
+            area = cv2.contourArea(biggest_contour)
+            if area > 20:
+                M = cv2.moments(biggest_contour)
+                if M["m00"] != 0:
+                    cx = int(M["m10"] / M["m00"]) + lx
+                    cy = int(M["m01"] / M["m00"]) + ly
+                    biggest_contour_global = biggest_contour + [lx, ly]
+                    processed_data['detected_orange'].append({'type': 'orange_block', 'color': 'orange', 'area': area, 'centroid': (cx, cy), 'contour': biggest_contour_global})
 
-    contours, _ = cv2.findContours(final_mask_blue, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    if contours:
-        biggest_contour = max(contours, key=cv2.contourArea)
-        area = cv2.contourArea(biggest_contour)
-        if area > 20:
-            M = cv2.moments(biggest_contour)
-            if M["m00"] != 0:
-                cx = int(M["m10"] / M["m00"])
-                cy = int(M["m01"] / M["m00"])
-                processed_data['detected_blue'].append({'type': 'blue_block', 'color': 'blue', 'area': area, 'centroid': (cx, cy), 'contour': biggest_contour})
+    # Blue (Line)
+    if cv2.countNonZero(mask_blue_line) > 0:
+        contours, _ = cv2.findContours(mask_blue_line, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        if contours:
+            biggest_contour = max(contours, key=cv2.contourArea)
+            area = cv2.contourArea(biggest_contour)
+            if area > 20:
+                M = cv2.moments(biggest_contour)
+                if M["m00"] != 0:
+                    cx = int(M["m10"] / M["m00"]) + lx
+                    cy = int(M["m01"] / M["m00"]) + ly
+                    biggest_contour_global = biggest_contour + [lx, ly]
+                    processed_data['detected_blue'].append({'type': 'blue_block', 'color': 'blue', 'area': area, 'centroid': (cx, cy), 'contour': biggest_contour_global})
 
-    contours, _ = cv2.findContours(final_mask_close_black, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    for contour in contours:
-        area = cv2.contourArea(contour)
-        if area > WALL_MIN_AREA: # Check each contour's area
-            M = cv2.moments(contour)
-            if M["m00"] != 0:
-                cx = int(M["m10"] / M["m00"])
-                cy = int(M["m01"] / M["m00"])
-                processed_data['detected_close_black'].append({
-                    'type': 'close_black', 
-                    'color': 'black', 
-                    'area': area, 
-                    'centroid': (cx, cy), 
-                    'contour': contour # Add the current contour to the list
-                })
+    # Close Black
+    if cv2.countNonZero(final_mask_close_black) > 0:
+        contours, _ = cv2.findContours(final_mask_close_black, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        for contour in contours:
+            area = cv2.contourArea(contour)
+            if area > WALL_MIN_AREA: 
+                M = cv2.moments(contour)
+                if M["m00"] != 0:
+                    cx = int(M["m10"] / M["m00"])
+                    cy = int(M["m01"] / M["m00"]) + GLOBAL_Y_OFFSET
+                    contour_global = contour + [0, GLOBAL_Y_OFFSET]
+                    processed_data['detected_close_black'].append({
+                        'type': 'close_black', 
+                        'color': 'black', 
+                        'area': area, 
+                        'centroid': (cx, cy), 
+                        'contour': contour_global 
+                    })
 
+    # Walls
     wall_contours_by_roi = {job['type']: [] for job in [left_side_job, right_side_job, inner_left_side_job, inner_right_side_job]}
-    contours, _ = cv2.findContours(final_mask_walls, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    for c in contours:
-        if cv2.contourArea(c) > WALL_MIN_AREA:
-            M = cv2.moments(c)
-            if M["m00"] == 0: continue
-            cx = int(M["m10"] / M["m00"])
-            cy = int(M["m01"] / M["m00"])
+    if cv2.countNonZero(final_mask_walls) > 0:
+        contours, _ = cv2.findContours(final_mask_walls, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        for c in contours:
+            if cv2.contourArea(c) > WALL_MIN_AREA:
+                M = cv2.moments(c)
+                if M["m00"] == 0: continue
+                cx = int(M["m10"] / M["m00"])
+                cy = int(M["m01"] / M["m00"]) + GLOBAL_Y_OFFSET
 
-            job_type = 'unknown'
-            if left_side_job['roi'][0] <= cx < left_side_job['roi'][0] + left_side_job['roi'][2]: job_type = left_side_job['type']
-            elif right_side_job['roi'][0] <= cx < right_side_job['roi'][0] + right_side_job['roi'][2]: job_type = right_side_job['type']
-            elif inner_left_side_job['roi'][0] <= cx < inner_left_side_job['roi'][0] + inner_left_side_job['roi'][2]: job_type = inner_left_side_job['type']
-            elif inner_right_side_job['roi'][0] <= cx < inner_right_side_job['roi'][0] + inner_right_side_job['roi'][2]: job_type = inner_right_side_job['type']
+                job_type = 'unknown'
+                if left_side_job['roi'][0] <= cx < left_side_job['roi'][0] + left_side_job['roi'][2]: job_type = left_side_job['type']
+                elif right_side_job['roi'][0] <= cx < right_side_job['roi'][0] + right_side_job['roi'][2]: job_type = right_side_job['type']
+                elif inner_left_side_job['roi'][0] <= cx < inner_left_side_job['roi'][0] + inner_left_side_job['roi'][2]: job_type = inner_left_side_job['type']
+                elif inner_right_side_job['roi'][0] <= cx < inner_right_side_job['roi'][0] + inner_right_side_job['roi'][2]: job_type = inner_right_side_job['type']
 
-            if job_type != 'unknown':
-                wall_contours_by_roi[job_type].append(c)
+                if job_type != 'unknown':
+                    wall_contours_by_roi[job_type].append(c)
 
     for job_type, contour_list in wall_contours_by_roi.items():
         if contour_list:
@@ -384,8 +519,9 @@ def process_video_frame(frame):
             M = cv2.moments(biggest_contour)
             if M["m00"] != 0:
                 cx = int(M["m10"] / M["m00"])
-                cy = int(M["m01"] / M["m00"])
-                processed_data['detected_walls'].append({'type': job_type, 'color': 'black', 'area': area, 'centroid': (cx, cy), 'contour': biggest_contour})
+                cy = int(M["m01"] / M["m00"]) + GLOBAL_Y_OFFSET
+                biggest_contour_global = biggest_contour + [0, GLOBAL_Y_OFFSET]
+                processed_data['detected_walls'].append({'type': job_type, 'color': 'black', 'area': area, 'centroid': (cx, cy), 'contour': biggest_contour_global})
     
     return processed_data
 
@@ -578,13 +714,13 @@ def perform_initial_maneuver():
     scan_start_time = time.monotonic()
 
     while time.monotonic() - scan_start_time < 1.0:
-        frame = camera_thread.get_frame()
+        frame, frame_counter = camera_thread.get_frame()
         if frame is None: continue
 
         detections = process_video_frame(frame)
         annotated_frame = annotate_video_frame(frame, detections, driving_direction)
         try:
-            out.write(annotated_frame)
+            video_writer_thread.write(annotated_frame)
         except Exception as e:
             print(e)
         main_blocks = [b for b in detections.get('detected_blocks', []) if b['type'] == 'block']
@@ -607,10 +743,10 @@ def perform_initial_maneuver():
     if driving_direction == 'counter-clockwise':
         if detected_block_color == 'green':
             motor.forward(60)
-            while get_angular_difference(ninety_degree_heading, imu_thread.get_heading()) > 5:
-                servo.set_angle(steer_with_gyro(imu_thread.get_heading(),(ninety_degree_heading+10*direction_modifier)%360))
-            action_taken = f"DRIVE_FORWARD_GREEN for {0.8}s"
-            drive_straight_with_gyro(drive_target_heading, 0.8, 70, 'forward')
+            while get_angular_difference((INITIAL_HEADING - 100) % 360, imu_thread.get_heading()) > 5:
+                servo.set_angle(steer_with_gyro(imu_thread.get_heading(),(INITIAL_HEADING - 100) % 360))
+            action_taken = f"DRIVE_FORWARD_GREEN for {0.65}s"
+            drive_straight_with_gyro((INITIAL_HEADING - 100) % 360, 0.65, 70, 'forward')
         elif detected_block_color == 'red':
             motor.forward(60)
             while get_angular_difference(ninety_degree_heading, imu_thread.get_heading()) > 5:
@@ -626,14 +762,14 @@ def perform_initial_maneuver():
             motor.forward(60)
             while get_angular_difference(ninety_degree_heading, imu_thread.get_heading()) > 5:
                 servo.set_angle(steer_with_gyro(imu_thread.get_heading(),ninety_degree_heading))
-            action_taken = f"REVERSE_FOR_GREEN_CW for {REVERSE_DURATION}s"
-            drive_straight_with_gyro(drive_target_heading, REVERSE_DURATION, 70, 'reverse')
+            action_taken = f"REVERSE_FOR_GREEN_CW for {0.6}s"
+            drive_straight_with_gyro(drive_target_heading, 0.6, 70, 'reverse')
         elif detected_block_color == 'red':
             motor.forward(60)
             while get_angular_difference(ninety_degree_heading, imu_thread.get_heading()) > 5:
                 servo.set_angle(steer_with_gyro(imu_thread.get_heading(),ninety_degree_heading))
-            action_taken = f"DRIVE_FORWARD_RED_CW for {1}s"
-            drive_straight_with_gyro(drive_target_heading, 1, 70, 'forward')
+            action_taken = f"DRIVE_FORWARD_RED_CW for {0.6}s"
+            drive_straight_with_gyro(drive_target_heading, 0.6, 70, 'forward')
         else:
             drive_straight_with_gyro((INITIAL_HEADING+55)%360, 0.5, 70, 'forward')
             return
@@ -706,7 +842,7 @@ def parking():
 
     motor.forward(55)
     while True:
-        frame = camera_thread.get_frame()
+        frame, frame_counter = camera_thread.get_frame()
         if frame is None:
             print("Failed to get frame, breaking loop.")
             break
@@ -746,7 +882,7 @@ def parking():
         cv2.putText(frame, state_text, (10, 110), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
 
         try:
-            out.write(frame)
+            video_writer_thread.write(frame)
         except Exception as e:
             print(e)
 
@@ -860,7 +996,7 @@ def parking2():
     on_first_line = False
 
     while True:
-        frame = camera_thread.get_frame()
+        frame, frame_counter = camera_thread.get_frame()
         if frame is None:
             print("Failed to get frame, breaking loop.")
             break
@@ -914,7 +1050,7 @@ def parking2():
                     on_first_line = True
         
         try:
-            out.write(frame)
+            video_writer_thread.write(frame)
         except Exception as e:
             print(e)
 
@@ -982,7 +1118,9 @@ if __name__ == "__main__":
     sys.stdout = log_file
     sys.stderr = log_file
     fourcc = cv2.VideoWriter_fourcc(*'avc1')
-    out = cv2.VideoWriter(video_path, fourcc, 30, (640, 360))
+
+    video_writer_thread = VideoWriterThread(video_path, fourcc, 30, (640, 360))
+    video_writer_thread.start()
     
     camera.initialize()
     motor.initialize()
@@ -1057,18 +1195,21 @@ if __name__ == "__main__":
 
     try:
         run_start_time = time.monotonic()
-        frame_start_time = time.perf_counter()
+        past_frame_counter = 0
+        frame_counter = 0
         perform_initial_maneuver()
         motor.forward(MOTOR_SPEED)
-
+        frame_start_time = time.perf_counter()
         while True:
             angle=0
             debug = []
             visual_target_x = None
-            frame = camera_thread.get_frame()
+            frame, frame_counter = camera_thread.get_frame()
+            if frame_counter == past_frame_counter:
+                continue
+            past_frame_counter = frame_counter
             if frame is None:
                 continue
-            
             sensor_readings = sensor_thread.get_readings()
 
             detections = process_video_frame(frame)
@@ -1153,7 +1294,7 @@ if __name__ == "__main__":
                 if driving_direction == 'clockwise':
                     target = 320-200
                 else:
-                    target = 320+130
+                    target = 320+220
                 angle = angle = ((detections['detected_magenta'][0]['centroid'][0] - target) * 0.15) + 1
         
             else:
@@ -1184,14 +1325,17 @@ if __name__ == "__main__":
                         angle += -35
             debug.append(round(angle))
             debug.append(turn_counter)
+            while int(1 / (time.perf_counter() - frame_start_time)) > 45:
+                pass
             frame_end_time = time.perf_counter()
             fps = 1/(frame_end_time - frame_start_time)
+            frame_start_time = time.perf_counter()
             debug.append(round(fps))
-            frame_start_time = frame_end_time
+            debug.append(frame_counter)
             annotated_frame = annotate_video_frame(frame, detections, driving_direction, debug_info=str(debug), visual_target_x=visual_target_x)
             
             try:
-                out.write(annotated_frame)
+                video_writer_thread.write(annotated_frame)
             except Exception as e:
                 print(e)
             angle = np.clip(angle, prevangle-10, prevangle+10)
@@ -1206,9 +1350,9 @@ if __name__ == "__main__":
                 if cv2.waitKey(1) & 0xFF == ord('q'):
                     break
             
-            # if button.is_pressed:
-            #     motor.brake()
-            #     break
+            if button.is_pressed:
+                motor.brake()
+                break
             if turn_counter >= 13:
                 if driving_direction == 'clockwise':
                     parking()
@@ -1234,14 +1378,16 @@ if __name__ == "__main__":
         camera_thread.stop()
         sensor_thread.stop()
         imu_thread.stop()
+        video_writer_thread.stop()
 
         print("MainThread: Waiting for threads to complete...")
         camera_thread.join()
         sensor_thread.join()
         imu_thread.join()
+        video_writer_thread.join()
         print("MainThread: All threads have completed.")
+                
         motor.brake()
-        out.release()
         camera.cleanup()
         servo.set_angle(0)
         servo.cleanup()

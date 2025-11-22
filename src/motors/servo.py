@@ -4,25 +4,39 @@ from src.obstacle_challenge import config
 
 
 servo_pwm = None
-
+_MAX_PWM_RETRIES = 5
+_PWM_RETRY_DELAY = 0.1
 
 def initialize():
-    """Initializes the servo motor PWM."""
+    """Initializes the servo motor PWM with retries in case the kernel is busy."""
     global servo_pwm
-    try:
-        servo_pwm = HardwarePWM(
-            pwm_channel=config.SERVO_PWM_CHANNEL,
-            hz=config.SERVO_PWM_FREQ,
-            chip=config.SERVO_PWM_CHIP,
-        )
-        servo_pwm.start(0)
-        set_angle(0.0)
-        time.sleep(0.5)
-        print("INFO: Servo Initialized.")
-        return True
-    except Exception as e:
-        print(f"FATAL: Servo failed to initialize: {e}")
-        return False
+
+    last_error = None
+    for attempt in range(1, _MAX_PWM_RETRIES + 1):
+        try:
+            servo_pwm = HardwarePWM(
+                pwm_channel=config.SERVO_PWM_CHANNEL,
+                hz=config.SERVO_PWM_FREQ,
+                chip=config.SERVO_PWM_CHIP,
+            )
+            servo_pwm.start(0)
+            set_angle(0.0)
+            time.sleep(0.5)
+            print("INFO: Servo Initialized.")
+            return True
+        except PermissionError as err:
+            last_error = err
+            print(
+                f"WARNING: Servo PWM permission denied (attempt {attempt}/{_MAX_PWM_RETRIES}): {err}"
+            )
+            time.sleep(_PWM_RETRY_DELAY * attempt)
+        except Exception as err:
+            last_error = err
+            print(f"FATAL: Servo failed to initialize: {err}")
+            time.sleep(_PWM_RETRY_DELAY * attempt)
+
+    print(f"FATAL: Servo failed to initialize after {_MAX_PWM_RETRIES} attempts: {last_error}")
+    return False
 
 
 def set_angle(input_angle: float):

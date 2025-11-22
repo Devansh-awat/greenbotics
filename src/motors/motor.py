@@ -6,7 +6,8 @@ from src.obstacle_challenge import config
 
 gpio_handle = None
 motor_pwm = None
-
+_MAX_PWM_RETRIES = 5
+_PWM_RETRY_DELAY = 0.1
 
 def initialize():
     """Initializes the DC motor driver and PWM."""
@@ -18,18 +19,34 @@ def initialize():
         lgpio.gpio_claim_output(gpio_handle, config.STBY_PIN)
 
         standby()
-
-        motor_pwm = HardwarePWM(
-            pwm_channel=config.MOTOR_PWM_CHANNEL,
-            hz=config.MOTOR_PWM_FREQ,
-            chip=config.MOTOR_PWM_CHIP,
-        )
-        motor_pwm.start(0)
-        print("INFO: Motor Initialized.")
-        return True
-    except Exception as e:
-        print(f"FATAL: Motor failed to initialize: {e}")
+    except Exception as err:
+        print(f"FATAL: Motor failed to initialize GPIO: {err}")
         return False
+
+    last_error = None
+    for attempt in range(1, _MAX_PWM_RETRIES + 1):
+        try:
+            motor_pwm = HardwarePWM(
+                pwm_channel=config.MOTOR_PWM_CHANNEL,
+                hz=config.MOTOR_PWM_FREQ,
+                chip=config.MOTOR_PWM_CHIP,
+            )
+            motor_pwm.start(0)
+            print("INFO: Motor Initialized.")
+            return True
+        except PermissionError as err:
+            last_error = err
+            print(
+                f"WARNING: Motor PWM permission denied (attempt {attempt}/{_MAX_PWM_RETRIES}): {err}"
+            )
+            time.sleep(_PWM_RETRY_DELAY * attempt)
+        except Exception as err:
+            last_error = err
+            print(f"FATAL: Motor failed to initialize: {err}")
+            time.sleep(_PWM_RETRY_DELAY * attempt)
+
+    print(f"FATAL: Motor failed to initialize after {_MAX_PWM_RETRIES} attempts: {last_error}")
+    return False
 
 
 def _set_speed(speed):

@@ -3,7 +3,6 @@ import cv2
 import numpy as np
 import time
 from src.obstacle_challenge import config
-import libcamera
 
 
 picam2 = None

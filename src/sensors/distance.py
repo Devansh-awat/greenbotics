@@ -192,13 +192,19 @@ def reinit_sensor(channel, urm09_address=URM09_ADDRESS):
             if not VL53L8CX_AVAILABLE:
                 return False
             try:
+                _sensors[-1].stop_ranging()
+            except Exception as e:
+                print("Warning: Could not stop ranging on existing VL53L8CX sensor:", e)
+            
+            try:
                 vl = VL53L8CX()
                 vl.resolution = VL53L8CX_RESOLUTION_4X4
                 vl.start_ranging()
                 _sensors[-1] = vl
                 _sensor_types[-1] = 'VL53L8CX'
                 return True
-            except Exception:
+            except Exception as e:
+                print("Warning: Error during VL53L8CX reinit:", e)
                 return False
 
         if _mux is None:
