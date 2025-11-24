@@ -222,6 +222,8 @@ if __name__ == "__main__":
     print("MainThread: IMU is ready. Proceeding with main logic.")  
     led.on()
     button.wait_for_press()
+    led.off()
+    time.sleep(0.5)
     INITIAL_HEADING = None
     while INITIAL_HEADING is None:
         print("MainThread: Waiting for first valid heading reading...")

@@ -3,6 +3,7 @@ import adafruit_bno055
 import time
 import numpy as np
 import json
+import traceback
 from src.obstacle_challenge import config
 
 # Define the file where calibration data will be stored
@@ -120,19 +121,22 @@ def initialize():
         print("INFO: Gyro is disabled in config.")
         return True
 
-    try:
-        i2c = board.I2C()
-        sensor = adafruit_bno055.BNO055_I2C(i2c)
-        sensor.mode = adafruit_bno055.NDOF_MODE
-        time.sleep(1) # Allow sensor to boot up
-        #load_calibration()
-        print(f"INFO: Gyro (BNO055) Initialized. Temp: {sensor.temperature}°C")
-        print(f"INFO: Current calibration status: {sensor.calibration_status}")
-        return True
-    except Exception as e:
-        print(f"WARNING: Gyro disabled. Could not initialize: {e}")
-        sensor = None
-        return True
+    for attempt in range(3):
+        try:
+            i2c = board.I2C()
+            sensor = adafruit_bno055.BNO055_I2C(i2c)
+            sensor.mode = adafruit_bno055.NDOF_MODE
+            time.sleep(1) # Allow sensor to boot up
+            #load_calibration()
+            print(f"INFO: Gyro (BNO055) Initialized. Temp: {sensor.temperature}°C")
+            print(f"INFO: Current calibration status: {sensor.calibration_status}")
+            return True
+        except Exception as e:
+            print(f"bno055.py: ERROR during Gyro initialisation: {e}")
+            traceback.print_exc()
+            time.sleep(0.2)
+            sensor = None
+    return False
 
 
 def get_heading():

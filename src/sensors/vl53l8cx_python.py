@@ -57,6 +57,11 @@ class VL53L8CX_ResultsData(ctypes.Structure):
         ('motion_indicator', ctypes.c_uint8 * 144)
     ]
 
+    def __repr__(self):
+        return (f"VL53L8CX_ResultsData(temp={self.silicon_temp_degc}, "
+                f"targets={list(self.nb_target_detected[:16])}, " # Show first 16 zones for brevity
+                f"status={list(self.target_status[:16])})")
+
 
 # --- Python Wrapper Class ---
 
@@ -74,9 +79,11 @@ class VL53L8CX:
         :param i2c_bus_path: The device path for the C library to open (e.g., "/dev/i2c-2").
         """
         self.i2c_bus_path_str = i2c_bus_path # Store for user feedback
+        print(f"INFO: Initializing VL53L8CX on {i2c_bus_path}...")
         
         lib_path = os.path.join(os.path.dirname(__file__), 'libvl53l8cx_uld.so')
         self.uld_lib = ctypes.CDLL(lib_path)
+        print(f"INFO: Loaded C library from {lib_path}")
         self._define_c_functions()
         
         self.dev = VL53L8CX_Configuration()
@@ -85,16 +92,19 @@ class VL53L8CX:
         self._is_ranging = False
 
         status = self.uld_lib.vl53l8cx_comms_init(self.p_dev)
+        print(f"INFO: Comms init status: {status}")
         if status != 0:
             raise IOError(f"C lib failed to open I2C bus: {self.i2c_bus_path_str}. Check C code & permissions.")
 
         is_alive = ctypes.c_uint8(0)
         status = self.uld_lib.vl53l8cx_is_alive(self.p_dev, ctypes.byref(is_alive))
+        print(f"INFO: Is alive status: {status}, is_alive: {is_alive.value}")
         if status != 0 or is_alive.value == 0:
             self.uld_lib.vl53l8cx_comms_close(self.p_dev)
             raise IOError(f"VL53L8CX sensor not found on bus {self.i2c_bus_path_str}.")
         
         is_firmware_running = self.uld_lib.vl53l8cx_is_firmware_running(self.p_dev)
+        print(f"INFO: Firmware running check: {is_firmware_running}")
         
         if is_firmware_running == 1:
             print("INFO: VL53L8CX firmware already running. Performing fast re-init.")
@@ -106,12 +116,13 @@ class VL53L8CX:
         else:
             print("INFO: VL53L8CX firmware not detected. Performing full, one-time initialization...")
             status = self.uld_lib.vl53l8cx_init(self.p_dev)
+            print(f"INFO: Init status: {status}")
 
         if status != 0:
             self.uld_lib.vl53l8cx_comms_close(self.p_dev)
             raise IOError(f"Failed to initialize VL53L8CX sensor, status {status}")
 
-        self.set_ranging_frequency_hz(60)
+        self.set_ranging_frequency_hz(30)
 
         self._resolution = VL53L8CX_RESOLUTION_4X4
 
@@ -128,8 +139,8 @@ class VL53L8CX:
         self.uld_lib.vl53l8cx_start_ranging.restype = ctypes.c_uint8
         self.uld_lib.vl53l8cx_stop_ranging.argtypes = [ctypes.POINTER(VL53L8CX_Configuration)]
         self.uld_lib.vl53l8cx_stop_ranging.restype = ctypes.c_uint8
-        self.uld_lib.VL53L8CX_wait_for_dataready.argtypes = [ctypes.POINTER(VL53L8CX_Platform)]
-        self.uld_lib.VL53L8CX_wait_for_dataready.restype = ctypes.c_uint8
+        self.uld_lib.vl53l8cx_check_data_ready.argtypes = [ctypes.POINTER(VL53L8CX_Configuration), ctypes.POINTER(ctypes.c_uint8)]
+        self.uld_lib.vl53l8cx_check_data_ready.restype = ctypes.c_uint8
         self.uld_lib.vl53l8cx_get_ranging_data.argtypes = [ctypes.POINTER(VL53L8CX_Configuration), ctypes.POINTER(VL53L8CX_ResultsData)]
         self.uld_lib.vl53l8cx_get_ranging_data.restype = ctypes.c_uint8
         self.uld_lib.vl53l8cx_set_resolution.argtypes = [ctypes.POINTER(VL53L8CX_Configuration), ctypes.c_uint8]
@@ -159,6 +170,7 @@ class VL53L8CX:
         
     def start_ranging(self):
         status = self.uld_lib.vl53l8cx_start_ranging(self.p_dev)
+        print(f"INFO: Start ranging status: {status}")
         if status != 0:
             raise IOError(f"Failed to start ranging, status {status}")
         self._is_ranging = True
@@ -166,21 +178,24 @@ class VL53L8CX:
     def stop_ranging(self):
         if self._is_ranging:
             status = self.uld_lib.vl53l8cx_stop_ranging(self.p_dev)
+            print(f"INFO: Stop ranging status: {status}")
             if status != 0:
                 print(f"Warning: Failed to stop ranging cleanly, status {status}")
             self._is_ranging = False
     
     def get_data(self):
         results = VL53L8CX_ResultsData()
-        is_ready = self.uld_lib.VL53L8CX_wait_for_dataready(ctypes.byref(self.dev.platform))
-        if not is_ready:
-            print("Warning: Data not ready from VL53L8CX sensor.")
-        if is_ready:
+        is_ready = ctypes.c_uint8(0)
+        status = self.uld_lib.vl53l8cx_check_data_ready(self.p_dev, ctypes.byref(is_ready))
+        
+        if status == 0 and is_ready.value:
             status = self.uld_lib.vl53l8cx_get_ranging_data(self.p_dev, ctypes.byref(results))
             if status == 0:
                 return results
             else:
                 print(f"Warning: Failed to get ranging data from VL53L8CX, status {status}, results: {results}")
+        else:
+            print(f"DEBUG: Data is not ready, status: {status}")
         return None
 
     def __del__(self):

@@ -1,120 +1,184 @@
 import cv2
 import numpy as np
+import sys
+import os
+import time
 from src.sensors import camera
-from src.obstacle_challenge.config import LOWER_GREEN, UPPER_GREEN, LOWER_RED_1, UPPER_RED_1, LOWER_RED_2, UPPER_RED_2
+from src.obstacle_challenge.main_v3 import HSV_RANGES, LAB_RANGES
 
-# Empty callback function required for trackbar creation
-def empty(a):
+# --- Configuration ---
+# Change these variables to switch modes
+TARGET_COLOR = 'RED'   # Options: RED, GREEN, BLUE, MAGENTA, ORANGE, BLACK
+TARGET_SPACE = 'LAB'   # Options: HSV, LAB
+# ---------------------
+
+def nothing(x):
     pass
 
-# Initialize the camera using your custom module
-camera.initialize()
-
-# --- Create Trackbar Windows ---
-
-# Window for GREEN trackbars
-cv2.namedWindow("Green Trackbars")
-cv2.resizeWindow("Green Trackbars", 640, 240)
-cv2.createTrackbar("HUE MIN", "Green Trackbars", LOWER_GREEN[0], 179, empty)
-cv2.createTrackbar("HUE MAX", "Green Trackbars", UPPER_GREEN[0], 179, empty)
-cv2.createTrackbar("SAT MIN", "Green Trackbars", LOWER_GREEN[1], 255, empty)
-cv2.createTrackbar("SAT MAX", "Green Trackbars", UPPER_GREEN[1], 255, empty)
-cv2.createTrackbar("VAL MIN", "Green Trackbars", LOWER_GREEN[2], 255, empty)
-cv2.createTrackbar("VAL MAX", "Green Trackbars", UPPER_GREEN[2], 255, empty)
-
-# Window for RED trackbars (for two ranges)
-cv2.namedWindow("Red Trackbars")
-cv2.resizeWindow("Red Trackbars", 640, 480)
-# Trackbars for the first red range
-cv2.createTrackbar("HUE MIN 1", "Red Trackbars", LOWER_RED_1[0], 179, empty)
-cv2.createTrackbar("HUE MAX 1", "Red Trackbars", UPPER_RED_1[0], 179, empty)
-cv2.createTrackbar("SAT MIN 1", "Red Trackbars", LOWER_RED_1[1], 255, empty)
-cv2.createTrackbar("SAT MAX 1", "Red Trackbars", UPPER_RED_1[1], 255, empty)
-cv2.createTrackbar("VAL MIN 1", "Red Trackbars", LOWER_RED_1[2], 255, empty)
-cv2.createTrackbar("VAL MAX 1", "Red Trackbars", UPPER_RED_1[2], 255, empty)
-# Trackbars for the second red range
-cv2.createTrackbar("HUE MIN 2", "Red Trackbars", LOWER_RED_2[0], 179, empty)
-cv2.createTrackbar("HUE MAX 2", "Red Trackbars", UPPER_RED_2[0], 179, empty)
-cv2.createTrackbar("SAT MIN 2", "Red Trackbars", LOWER_RED_2[1], 255, empty)
-cv2.createTrackbar("SAT MAX 2", "Red Trackbars", UPPER_RED_2[1], 255, empty)
-cv2.createTrackbar("VAL MIN 2", "Red Trackbars", LOWER_RED_2[2], 255, empty)
-cv2.createTrackbar("VAL MAX 2", "Red Trackbars", UPPER_RED_2[2], 255, empty)
-
-
-while True:
-    # Capture a frame from the camera and convert it to HSV color space
-    image = camera.capture_frame()
-    image = cv2.GaussianBlur(image, (1, 7), 0)
-    imgHSV = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
-
-    # --- Green Color Detection ---
-    # Read current positions of green trackbars
-    g_h_min = cv2.getTrackbarPos("HUE MIN", "Green Trackbars")
-    g_h_max = cv2.getTrackbarPos("HUE MAX", "Green Trackbars")
-    g_s_min = cv2.getTrackbarPos("SAT MIN", "Green Trackbars")
-    g_s_max = cv2.getTrackbarPos("SAT MAX", "Green Trackbars")
-    g_v_min = cv2.getTrackbarPos("VAL MIN", "Green Trackbars")
-    g_v_max = cv2.getTrackbarPos("VAL MAX", "Green Trackbars")
-
-    # Define lower and upper HSV bounds for green
-    lower_green = np.array([g_h_min, g_s_min, g_v_min])
-    upper_green = np.array([g_h_max, g_s_max, g_v_max])
+def get_default_ranges(color, space):
+    ranges_dict = HSV_RANGES if space == 'HSV' else LAB_RANGES
     
-    # Create the green mask and apply it to the original image
-    green_mask = cv2.inRange(imgHSV, lower_green, upper_green)
-    green_result = cv2.bitwise_and(image, image, mask=green_mask)
-
-    # --- Red Color Detection ---
-    # Read current positions of the first set of red trackbars
-    r1_h_min = cv2.getTrackbarPos("HUE MIN 1", "Red Trackbars")
-    r1_h_max = cv2.getTrackbarPos("HUE MAX 1", "Red Trackbars")
-    r1_s_min = cv2.getTrackbarPos("SAT MIN 1", "Red Trackbars")
-    r1_s_max = cv2.getTrackbarPos("SAT MAX 1", "Red Trackbars")
-    r1_v_min = cv2.getTrackbarPos("VAL MIN 1", "Red Trackbars")
-    r1_v_max = cv2.getTrackbarPos("VAL MAX 1", "Red Trackbars")
+    lower_key = f'LOWER_{color}'
+    upper_key = f'UPPER_{color}'
     
-    # Read current positions of the second set of red trackbars
-    r2_h_min = cv2.getTrackbarPos("HUE MIN 2", "Red Trackbars")
-    r2_h_max = cv2.getTrackbarPos("HUE MAX 2", "Red Trackbars")
-    r2_s_min = cv2.getTrackbarPos("SAT MIN 2", "Red Trackbars")
-    r2_s_max = cv2.getTrackbarPos("SAT MAX 2", "Red Trackbars")
-    r2_v_min = cv2.getTrackbarPos("VAL MIN 2", "Red Trackbars")
-    r2_v_max = cv2.getTrackbarPos("VAL MAX 2", "Red Trackbars")
-
-    # Define lower and upper HSV bounds for both red ranges
-    lower_red_1 = np.array([r1_h_min, r1_s_min, r1_v_min])
-    upper_red_1 = np.array([r1_h_max, r1_s_max, r1_v_max])
-    lower_red_2 = np.array([r2_h_min, r2_s_min, r2_v_min])
-    upper_red_2 = np.array([r2_h_max, r2_s_max, r2_v_max])
-
-    # Create masks for each red range and combine them
-    red_mask_1 = cv2.inRange(imgHSV, lower_red_1, upper_red_1)
-    red_mask_2 = cv2.inRange(imgHSV, lower_red_2, upper_red_2)
-    red_mask = cv2.add(red_mask_1, red_mask_2)
+    # Handle Red HSV special case (split range)
+    if color == 'RED' and space == 'HSV':
+        l1 = ranges_dict.get('LOWER_RED_1', np.array([0, 100, 100]))
+        u1 = ranges_dict.get('UPPER_RED_1', np.array([10, 255, 255]))
+        l2 = ranges_dict.get('LOWER_RED_2', np.array([160, 100, 100]))
+        u2 = ranges_dict.get('UPPER_RED_2', np.array([180, 255, 255]))
+        return (l1, u1, l2, u2)
     
-    # Apply the combined red mask to the original image
-    red_result = cv2.bitwise_and(image, image, mask=red_mask)
-
-    # --- Display Final Output ---
-    # Convert single-channel masks to 3-channel BGR to stack them with color images
-    green_mask_bgr = cv2.cvtColor(green_mask, cv2.COLOR_GRAY2BGR)
-    red_mask_bgr = cv2.cvtColor(red_mask, cv2.COLOR_GRAY2BGR)
-
-    # Create the layout for the green side (masked image on top, result on bottom)
-    left_side = np.vstack([green_mask_bgr, green_result])
-
-    # Create the layout for the red side (masked image on top, result on bottom)
-    right_side = np.vstack([red_mask_bgr, red_result])
-
-    # Combine both sides horizontally into a single window
-    combined_view = np.hstack([left_side, right_side])
+    # Handle Red LAB (might use RED_1 keys if RED doesn't exist, or just RED if I added it? 
+    # In main_v3 I added LOWER_RED_1 and LOWER_RED_2 for LAB too. 
+    # Let's assume for LAB we just use RED_1 for now or check if RED exists.
+    # The dictionary keys in main_v3 are LOWER_RED_1, etc.
     
-    cv2.imshow("Color Tuning - Green (Left) & Red (Right)", combined_view)
+    if color == 'RED':
+         # For LAB, we might just want one range if it's continuous, but main_v3 has 2.
+         # If the user wants to tune "RED", and we have RED_1 and RED_2, we should probably just tune RED_1 
+         # unless we want 2 ranges for LAB too. 
+         # The user said "For red and hsv more trackbars are needed", implying LAB Red is single range.
+         # So for LAB Red, I'll default to LOWER_RED_1.
+         lower_key = 'LOWER_RED_1'
+         upper_key = 'UPPER_RED_1'
 
-    # Exit loop if 'q' is pressed
-    if cv2.waitKey(1) & 0xFF == ord('q'):
-        break
+    l = ranges_dict.get(lower_key, np.array([0, 0, 0]))
+    u = ranges_dict.get(upper_key, np.array([255, 255, 255]))
+    return (l, u)
 
-# Clean up resources
-cv2.destroyAllWindows()
-camera.cleanup()
+def main():
+    print(f"Starting Color Tuning for {TARGET_COLOR} in {TARGET_SPACE} space...")
+    
+    if not camera.initialize():
+        print("Failed to initialize camera.")
+        return
+
+    window_name = f"Tuning {TARGET_COLOR} ({TARGET_SPACE})"
+    cv2.namedWindow(window_name)
+    
+    defaults = get_default_ranges(TARGET_COLOR, TARGET_SPACE)
+    
+    if TARGET_COLOR == 'RED' and TARGET_SPACE == 'HSV':
+        l1, u1, l2, u2 = defaults
+        # Set 1
+        cv2.createTrackbar('L1_1', window_name, l1[0], 180, nothing)
+        cv2.createTrackbar('L1_2', window_name, l1[1], 255, nothing)
+        cv2.createTrackbar('L1_3', window_name, l1[2], 255, nothing)
+        cv2.createTrackbar('U1_1', window_name, u1[0], 180, nothing)
+        cv2.createTrackbar('U1_2', window_name, u1[1], 255, nothing)
+        cv2.createTrackbar('U1_3', window_name, u1[2], 255, nothing)
+        
+        # Set 2
+        cv2.createTrackbar('L2_1', window_name, l2[0], 180, nothing)
+        cv2.createTrackbar('L2_2', window_name, l2[1], 255, nothing)
+        cv2.createTrackbar('L2_3', window_name, l2[2], 255, nothing)
+        cv2.createTrackbar('U2_1', window_name, u2[0], 180, nothing)
+        cv2.createTrackbar('U2_2', window_name, u2[1], 255, nothing)
+        cv2.createTrackbar('U2_3', window_name, u2[2], 255, nothing)
+    else:
+        l, u = defaults
+        max_val_1 = 180 if TARGET_SPACE == 'HSV' else 255
+        
+        cv2.createTrackbar('L_1', window_name, l[0], max_val_1, nothing)
+        cv2.createTrackbar('L_2', window_name, l[1], 255, nothing)
+        cv2.createTrackbar('L_3', window_name, l[2], 255, nothing)
+        cv2.createTrackbar('U_1', window_name, u[0], max_val_1, nothing)
+        cv2.createTrackbar('U_2', window_name, u[1], 255, nothing)
+        cv2.createTrackbar('U_3', window_name, u[2], 255, nothing)
+
+    try:
+        while True:
+            frame = camera.capture_frame()
+            if frame is None:
+                time.sleep(0.1)
+                continue
+            
+            # Blur
+            frame = cv2.GaussianBlur(frame, (5, 5), 0)
+            
+            if TARGET_SPACE == 'HSV':
+                converted = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+            else:
+                converted = cv2.cvtColor(frame, cv2.COLOR_BGR2Lab)
+                
+            mask = None
+            
+            if TARGET_COLOR == 'RED' and TARGET_SPACE == 'HSV':
+                l1_1 = cv2.getTrackbarPos('L1_1', window_name)
+                l1_2 = cv2.getTrackbarPos('L1_2', window_name)
+                l1_3 = cv2.getTrackbarPos('L1_3', window_name)
+                u1_1 = cv2.getTrackbarPos('U1_1', window_name)
+                u1_2 = cv2.getTrackbarPos('U1_2', window_name)
+                u1_3 = cv2.getTrackbarPos('U1_3', window_name)
+                
+                l2_1 = cv2.getTrackbarPos('L2_1', window_name)
+                l2_2 = cv2.getTrackbarPos('L2_2', window_name)
+                l2_3 = cv2.getTrackbarPos('L2_3', window_name)
+                u2_1 = cv2.getTrackbarPos('U2_1', window_name)
+                u2_2 = cv2.getTrackbarPos('U2_2', window_name)
+                u2_3 = cv2.getTrackbarPos('U2_3', window_name)
+                
+                lower1 = np.array([l1_1, l1_2, l1_3])
+                upper1 = np.array([u1_1, u1_2, u1_3])
+                lower2 = np.array([l2_1, l2_2, l2_3])
+                upper2 = np.array([u2_1, u2_2, u2_3])
+                
+                mask1 = cv2.inRange(converted, lower1, upper1)
+                mask2 = cv2.inRange(converted, lower2, upper2)
+                mask = cv2.bitwise_or(mask1, mask2)
+                
+                # Print current values occasionally or on change?
+                # For now just let user see visual result
+                
+            else:
+                l_1 = cv2.getTrackbarPos('L_1', window_name)
+                l_2 = cv2.getTrackbarPos('L_2', window_name)
+                l_3 = cv2.getTrackbarPos('L_3', window_name)
+                u_1 = cv2.getTrackbarPos('U_1', window_name)
+                u_2 = cv2.getTrackbarPos('U_2', window_name)
+                u_3 = cv2.getTrackbarPos('U_3', window_name)
+                
+                lower = np.array([l_1, l_2, l_3])
+                upper = np.array([u_1, u_2, u_3])
+                
+                mask = cv2.inRange(converted, lower, upper)
+
+            # Show Original, Mask, Mask Applied
+            res = cv2.bitwise_and(frame, frame, mask=mask)
+            
+            # Stack images for display
+            # Convert mask to BGR so we can stack
+            mask_bgr = cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR)
+            
+            # Resize for better visibility if needed, but 640x360 is small enough
+            # Stack: Top: Original, Bottom: Mask | Result
+            # Or 3 side by side? 640*3 = 1920, fits on most screens.
+            
+            stacked = np.hstack((frame, mask_bgr, res))
+            
+            cv2.imshow(window_name, stacked)
+            
+            key = cv2.waitKey(1) & 0xFF
+            if key == ord('q'):
+                break
+            elif key == ord('s'):
+                print(f"--- Saved Values for {TARGET_COLOR} ({TARGET_SPACE}) ---")
+                if TARGET_COLOR == 'RED' and TARGET_SPACE == 'HSV':
+                    print(f"LOWER_RED_1 = np.array([{l1_1}, {l1_2}, {l1_3}])")
+                    print(f"UPPER_RED_1 = np.array([{u1_1}, {u1_2}, {u1_3}])")
+                    print(f"LOWER_RED_2 = np.array([{l2_1}, {l2_2}, {l2_3}])")
+                    print(f"UPPER_RED_2 = np.array([{u2_1}, {u2_2}, {u2_3}])")
+                else:
+                    print(f"LOWER_{TARGET_COLOR} = np.array([{l_1}, {l_2}, {l_3}])")
+                    print(f"UPPER_{TARGET_COLOR} = np.array([{u_1}, {u_2}, {u_3}])")
+
+    except KeyboardInterrupt:
+        pass
+    finally:
+        camera.cleanup()
+        cv2.destroyAllWindows()
+
+if __name__ == '__main__':
+    main()
+

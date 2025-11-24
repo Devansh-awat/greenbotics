@@ -1,7 +1,6 @@
 from collections import deque
 import time
 import queue
-from src.obstacle_challenge.config import LOWER_RED_1, UPPER_RED_1, LOWER_RED_2, UPPER_RED_2, LOWER_GREEN, UPPER_GREEN
 from src.sensors import bno055, camera, distance
 from src.motors import motor, servo
 import numpy as np
@@ -13,9 +12,12 @@ import sys
 import traceback
 from datetime import datetime
 
-MOTOR_SPEED = 92
+#MOTOR_SPEED = 92
+#ORANGE_COOLDOWN_FRAMES = 80
 
-ORANGE_COOLDOWN_FRAMES = 80
+MOTOR_SPEED = 85
+ORANGE_COOLDOWN_FRAMES = 40
+
 ORANGE_DETECTION_HISTORY_LENGTH = 4
 
 WALL_THRESHOLD = 200
@@ -24,14 +26,48 @@ FRAME_WIDTH = 640
 FRAME_HEIGHT = 360
 FRAME_MIDPOINT_X = FRAME_WIDTH // 2
 
-LOWER_BLACK = np.array([0, 0, 0])
-UPPER_BLACK = np.array([180, 255, 120])
-LOWER_ORANGE = np.array([6, 70, 20])
-UPPER_ORANGE = np.array([26, 255, 255])
-LOWER_MAGENTA = np.array([158, 73, 64])
-UPPER_MAGENTA = np.array([173, 255, 223])
-LOWER_BLUE = np.array([94, 45, 58])
-UPPER_BLUE = np.array([140, 226, 185])
+USE_LAB = False
+
+HSV_RANGES = {
+    'LOWER_RED_1': np.array([0, 100, 55]), 'UPPER_RED_1': np.array([5, 255, 255]),
+    'LOWER_RED_2': np.array([176, 100, 55]), 'UPPER_RED_2': np.array([180, 255, 255]),
+    'LOWER_GREEN': np.array([40, 60, 40]), 'UPPER_GREEN': np.array([80, 255, 180]),
+    'LOWER_BLACK': np.array([0, 0, 0]), 'UPPER_BLACK': np.array([180, 255, 120]),
+    'LOWER_ORANGE': np.array([6, 70, 20]), 'UPPER_ORANGE': np.array([26, 255, 255]),
+    'LOWER_MAGENTA': np.array([158, 73, 64]), 'UPPER_MAGENTA': np.array([173, 255, 223]),
+    'LOWER_BLUE': np.array([94, 45, 58]), 'UPPER_BLUE': np.array([140, 226, 185])
+}
+
+# Generic LAB values (OpenCV LAB: L=0-255, a=0-255, b=0-255)
+LAB_RANGES = {
+    'LOWER_RED_1': np.array([30, 159, 137]), 'UPPER_RED_1': np.array([158, 175, 169]),
+    'LOWER_RED_2': np.array([20, 150, 150]), 'UPPER_RED_2': np.array([200, 255, 255]), # Duplicate for now
+    'LOWER_GREEN': np.array([79, 80, 115]), 'UPPER_GREEN': np.array([134, 129, 146]),
+    'LOWER_BLACK': np.array([0, 115, 115]), 'UPPER_BLACK': np.array([130, 134, 134]),
+    'LOWER_ORANGE': np.array([97, 136, 138]), 'UPPER_ORANGE': np.array([177, 169, 172]),
+    'LOWER_MAGENTA': np.array([72, 147, 48]), 'UPPER_MAGENTA': np.array([159, 174, 130]),
+    'LOWER_BLUE': np.array([28, 136, 44]), 'UPPER_BLUE': np.array([100, 163, 104])
+}
+
+if USE_LAB:
+    COLOR_RANGES = LAB_RANGES
+else:
+    COLOR_RANGES = HSV_RANGES
+
+LOWER_RED_1 = COLOR_RANGES['LOWER_RED_1']
+UPPER_RED_1 = COLOR_RANGES['UPPER_RED_1']
+LOWER_RED_2 = COLOR_RANGES['LOWER_RED_2']
+UPPER_RED_2 = COLOR_RANGES['UPPER_RED_2']
+LOWER_GREEN = COLOR_RANGES['LOWER_GREEN']
+UPPER_GREEN = COLOR_RANGES['UPPER_GREEN']
+LOWER_BLACK = COLOR_RANGES['LOWER_BLACK']
+UPPER_BLACK = COLOR_RANGES['UPPER_BLACK']
+LOWER_ORANGE = COLOR_RANGES['LOWER_ORANGE']
+UPPER_ORANGE = COLOR_RANGES['UPPER_ORANGE']
+LOWER_MAGENTA = COLOR_RANGES['LOWER_MAGENTA']
+UPPER_MAGENTA = COLOR_RANGES['UPPER_MAGENTA']
+LOWER_BLUE = COLOR_RANGES['LOWER_BLUE']
+UPPER_BLUE = COLOR_RANGES['UPPER_BLUE']
 target=0
 detection_params = {'min_area': 300, 'return_rule': 'biggest_in_job', 'return_mask': True}
 WALL_MIN_AREA = detection_params['min_area']
@@ -194,13 +230,15 @@ class SensorThread(threading.Thread):
             print("SensorThread: Initialization complete flag set.")
             self.initialization_complete.set()
 
-            consecutive_none = {ch: 0 for ch in distance._sensors.keys()}
-            reinit_threshold = 4
+            consecutive_none = {ch: 0 for ch in [-1, 0, 2, 3]}
+            reinit_threshold = 30
             while not self.stop_event.is_set():
                 try:
                     readings = {}
-                    for ch in sorted(self.dist._sensors.keys()):
+                    for ch in list(consecutive_none.keys()):
                         val = self.dist.get_distance(ch)
+                        if ch == -1:
+                            print(f"DEBUG: SensorThread get_distance({ch}) -> {val}")
                         readings[ch] = val
                         if val is None:
                             consecutive_none[ch] = consecutive_none.get(ch, 0) + 1
@@ -215,8 +253,10 @@ class SensorThread(threading.Thread):
 
                     for ch, count in list(consecutive_none.items()):
                         if count >= reinit_threshold:
-                            ok = distance.reinit_sensor(ch)
-                            consecutive_none[ch] = 0 if ok else count
+                            #ok = distance.reinit_sensor(ch)
+                            #print(f"DEBUG: Re-init returned: {ok}")
+                            #consecutive_none[ch] = 0 if ok else count
+                            pass
 
                     time.sleep(0.02) # account for timing budget 
                 except Exception as e:
@@ -276,7 +316,11 @@ def process_video_frame(frame):
     # Slice the frame first
     frame_slice = frame[GLOBAL_Y_OFFSET:GLOBAL_Y_END, :]
     frame_slice = cv2.GaussianBlur(frame_slice, (1, 7), 0)
-    hsv_slice = cv2.cvtColor(frame_slice, cv2.COLOR_BGR2HSV)
+    
+    if USE_LAB:
+        hsv_slice = cv2.cvtColor(frame_slice, cv2.COLOR_BGR2Lab)
+    else:
+        hsv_slice = cv2.cvtColor(frame_slice, cv2.COLOR_BGR2HSV)
 
     # --- 1. Crop and Detect (Relative to Slice) ---
 
@@ -290,8 +334,13 @@ def process_video_frame(frame):
     main_crop = hsv_slice[my_slice:my_slice+mh, mx:mx+mw]
     
     mask_red1_main = cv2.inRange(main_crop, LOWER_RED_1, UPPER_RED_1)
-    mask_red2_main = cv2.inRange(main_crop, LOWER_RED_2, UPPER_RED_2)
-    mask_red_main = cv2.bitwise_or(mask_red1_main, mask_red2_main)
+    if USE_LAB:
+        # In LAB, Red is continuous, so we only need one mask
+        mask_red_main = mask_red1_main
+    else:
+        # In HSV, Red wraps around 180->0, so we need two masks combined
+        mask_red2_main = cv2.inRange(main_crop, LOWER_RED_2, UPPER_RED_2)
+        mask_red_main = cv2.bitwise_or(mask_red1_main, mask_red2_main)
     mask_green_main = cv2.inRange(main_crop, LOWER_GREEN, UPPER_GREEN)
     mask_magenta_main = cv2.inRange(main_crop, LOWER_MAGENTA, UPPER_MAGENTA)
 
@@ -313,8 +362,13 @@ def process_video_frame(frame):
     close_crop = hsv_slice[cy_slice:cy_slice+ch, cx:cx+cw]
     
     mask_red1_close = cv2.inRange(close_crop, LOWER_RED_1, UPPER_RED_1)
-    mask_red2_close = cv2.inRange(close_crop, LOWER_RED_2, UPPER_RED_2)
-    mask_red_close = cv2.bitwise_or(mask_red1_close, mask_red2_close)
+    
+    if USE_LAB:
+        mask_red_close = mask_red1_close
+    else:
+        mask_red2_close = cv2.inRange(close_crop, LOWER_RED_2, UPPER_RED_2)
+        mask_red_close = cv2.bitwise_or(mask_red1_close, mask_red2_close)
+
     mask_green_close = cv2.inRange(close_crop, LOWER_GREEN, UPPER_GREEN)
     mask_magenta_close = cv2.inRange(close_crop, LOWER_MAGENTA, UPPER_MAGENTA)
 
@@ -861,7 +915,7 @@ def parking():
         target_y_in_roi = target_y_global - ROI_Y_START
 
         roi = frame[ROI_Y_START:, ROI_X_START:]
-        mask = cv2.inRange(cv2.cvtColor(roi, cv2.COLOR_BGR2HSV), LOWER_BLACK, np.array([180, 255, 40]))
+        mask = cv2.inRange(cv2.cvtColor(roi, cv2.COLOR_BGR2HSV), HSV_RANGES['LOWER_BLACK'], np.array([180, 255, 40]))
         roi[mask == 255] = (255, 255, 255)
         y_coords = np.argmax(mask, axis=0)
         valid_y_coords = y_coords[mask[y_coords, np.arange(roi.shape[1])] > 0]
@@ -879,7 +933,7 @@ def parking():
         
         roi_stop = frame[330:360, 426:640]
         hsv_stop = cv2.cvtColor(roi_stop, cv2.COLOR_BGR2HSV)
-        mask_magenta = cv2.inRange(hsv_stop, LOWER_MAGENTA, UPPER_MAGENTA)
+        mask_magenta = cv2.inRange(hsv_stop, HSV_RANGES['LOWER_MAGENTA'], HSV_RANGES['UPPER_MAGENTA'])
         magenta_pixel_count = cv2.countNonZero(mask_magenta)
 
         cv2.rectangle(frame, (ROI_X_START, ROI_Y_START), (frame_width, frame_height), (0, 255, 0), 2)
@@ -917,25 +971,28 @@ def parking():
             pass
     motor.brake()
     print('parking first reverse turn:',sensor_thread.get_readings())
-    motor.forward(40)
+    motor.reverse(40)
     servo.set_angle(0)
     print('reverse')
     while True:
         dist = sensor_thread.get_readings()['distance_back']
         print('Forward for parking back distance:', dist)
-        if dist is not None and dist > 180:
+        if dist is not None and dist < 200:
             break
         time.sleep(0.01)
     print('parking forward:',sensor_thread.get_readings())
     motor.brake()
     motor.reverse(40)
     servo.set_angle_unlimited(-65)
+    manuver_start_time = time.monotonic()
     while True:
         dist = sensor_thread.get_readings()['distance_back']
         if dist is not None:
-            if dist <= 65:
+            if dist <= 75:
                 break
         if get_angular_difference((INITIAL_HEADING+180)%360, imu_thread.get_heading()) < 2:
+            break
+        if time.monotonic() - manuver_start_time > 3:
             break
     motor.brake()
     motor.forward(35)
@@ -1015,7 +1072,7 @@ def parking2():
         target_y_in_roi = target_y_global - ROI_Y_START
 
         roi_black_line = frame[ROI_Y_START:, :ROI_X_END]
-        mask_black = cv2.inRange(cv2.cvtColor(roi_black_line, cv2.COLOR_BGR2HSV), LOWER_BLACK, np.array([180, 255, 40]))
+        mask_black = cv2.inRange(cv2.cvtColor(roi_black_line, cv2.COLOR_BGR2HSV), HSV_RANGES['LOWER_BLACK'], np.array([180, 255, 40]))
         y_coords = np.argmax(mask_black, axis=0)
         valid_y_coords = y_coords[mask_black[y_coords, np.arange(roi_black_line.shape[1])] > 0]
         
@@ -1035,7 +1092,7 @@ def parking2():
         # Magenta line detection ROI on bottom left
         roi_stop = frame[330:360, 0:214] 
         hsv_stop = cv2.cvtColor(roi_stop, cv2.COLOR_BGR2HSV)
-        mask_magenta = cv2.inRange(hsv_stop, LOWER_MAGENTA, UPPER_MAGENTA)
+        mask_magenta = cv2.inRange(hsv_stop, HSV_RANGES['LOWER_MAGENTA'], HSV_RANGES['UPPER_MAGENTA'])
         magenta_pixel_count = cv2.countNonZero(mask_magenta)
 
         cv2.rectangle(frame, (0, 330), (214, 360), (255, 0, 255), 2)
@@ -1089,7 +1146,7 @@ def parking2():
     while True:
         dist = sensor_thread.get_readings()['distance_back']
         if dist is not None:
-            if dist <= 65:
+            if dist <= 75:
                 break
         if get_angular_difference((INITIAL_HEADING+180)%360, imu_thread.get_heading()) < 2:
             break
@@ -1110,7 +1167,7 @@ def parking2():
         dist = sensor_thread.get_readings()['distance_back']
         servo.set_angle(-steer_with_gyro(imu_thread.get_heading(),(INITIAL_HEADING+180)%360, kp=1.5))
         if dist is not None:
-            if dist <= 45:
+            if dist <= 55:
                 break
         if get_angular_difference((INITIAL_HEADING+180)%360, imu_thread.get_heading()) < 2:
             break
@@ -1165,6 +1222,7 @@ if __name__ == "__main__":
     led.on()
     button.wait_for_press()
     led.off()
+    time.sleep(0.5)
     while True:
         dist_left = sensor_thread.get_readings()['distance_left']
         dist_right = sensor_thread.get_readings()['distance_right']
@@ -1334,8 +1392,10 @@ if __name__ == "__main__":
                         angle += -35
             debug.append(round(angle))
             debug.append(turn_counter)
-            while int(1 / (time.perf_counter() - frame_start_time)) > 45:
-                pass
+
+            elapsed = time.perf_counter() - frame_start_time
+            if elapsed < 1/40:
+                time.sleep(1/40 - elapsed)
             frame_end_time = time.perf_counter()
             fps = 1/(frame_end_time - frame_start_time)
             frame_start_time = time.perf_counter()

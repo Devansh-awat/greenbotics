@@ -9,6 +9,7 @@ import board
 import busio
 import adafruit_tca9548a
 import adafruit_vl53l1x
+import traceback
 from adafruit_bus_device.i2c_device import I2CDevice
 
 # --- ADD VL53L8CX SUPPORT ---
@@ -135,50 +136,63 @@ def initialise(i2c_bus_num=I2C_BUS_MAIN, mux_address=TCA_ADDRESS, urm09_address=
         _mux = None
 
     if _mux:
-        print(f"INFO: Probing for sensors on mux channels: {list(TOF_CHANNELS_TO_USE)}...")
-        for i in TOF_CHANNELS_TO_USE:
-            channel_bus = _mux[i]
-            
+        print(f"INFO: Enabling VL53L1X on mux channel 2...")
+        channel_bus = _mux[2]
+
+        for attempt in range(3):    
             try:
                 vl53_sensor = adafruit_vl53l1x.VL53L1X(channel_bus)
                 vl53_sensor.distance_mode = 1
                 vl53_sensor.timing_budget = 50
                 vl53_sensor.start_ranging()
-                _sensors[i] = vl53_sensor
-                _sensor_types[i] = 'VL53L1X'
-                print(f"  - SUCCESS: VL53L1X found and initialized on channel {i}.")
-                continue
-            except (ValueError, OSError):
-                pass
+                _sensors[2] = vl53_sensor
+                _sensor_types[2] = 'VL53L1X'
+                print(f"  - SUCCESS: VL53L1X found and initialized on channel 2.")
+                break
+            except Exception as e:
+                print(f"distance.py: ERROR during VL53L1X initialisation: {e}")
+                traceback.print_exc()
+                time.sleep(0.2)
 
-            try:
-                urm09_sensor = DFRobot_URM09_IIC_CircuitPython(channel_bus, addr=urm09_address)
-                # --- MODIFICATION: Give the URM09 time for its first reading during setup ---
-                # This is a one-time block during initialization only.
-                time.sleep(0.05) 
-                if urm09_sensor.get_distance() is not None:
-                    _sensors[i] = urm09_sensor
-                    _sensor_types[i] = 'URM09'
-                    print(f"  - SUCCESS: URM09 found and initialized on channel {i}.")
-                else:
-                    print(f"  - INFO: No sensor found on channel {i}.")
-            except Exception:
-                print(f"  - INFO: No sensor found on channel {i}.")
+        for i in [0,3]:
+            channel_bus = _mux[i]
+            for attempt in range(3):
+                try:
+                    urm09_sensor = DFRobot_URM09_IIC_CircuitPython(channel_bus, addr=urm09_address)
+                    # --- MODIFICATION: Give the URM09 time for its first reading during setup ---
+                    # This is a one-time block during initialization only.
+                    time.sleep(0.05) 
+                    if urm09_sensor.get_distance() is not None:
+                        _sensors[i] = urm09_sensor
+                        _sensor_types[i] = 'URM09'
+                        print(f"  - SUCCESS: URM09 found and initialized on channel {i}.")
+                        break
+                    else:
+                        print(f"  - INFO: No sensor found on channel {i}.")
+                        time.sleep(0.2)
+                except Exception as e:
+                    print(f"distance.py: ERROR during URM initialisation on channel {i} (Exception: {e}).")
+                    traceback.print_exc()
+                    time.sleep(0.2)
 
     # --- NEW: Probe for standalone VL53L8CX on I2C bus 2 ---
     if VL53L8CX_AVAILABLE:
         print("INFO: Probing for standalone VL53L8CX on I2C bus 2...")
-        try:
-            # Initialize on bus 2 with channel -1 (no mux)
-            # The C library must be modified to use "/dev/i2c-2"
-            vl53l8cx_bus2_sensor = VL53L8CX()
-            vl53l8cx_bus2_sensor.resolution = VL53L8CX_RESOLUTION_4X4
-            vl53l8cx_bus2_sensor.start_ranging()
-            _sensors[-1] = vl53l8cx_bus2_sensor
-            _sensor_types[-1] = 'VL53L8CX'
-            print("  - SUCCESS: VL53L8CX found on I2C bus 2 (assigned to channel -1).")
-        except (IOError, OSError):
-            print("  - INFO: No VL53L8CX found on I2C bus 2.")
+        for attempt in range(3):
+            try:
+                # Initialize on bus 2 with channel -1 (no mux)
+                # The C library must be modified to use "/dev/i2c-2"
+                vl53l8cx_bus2_sensor = VL53L8CX()
+                vl53l8cx_bus2_sensor.resolution = VL53L8CX_RESOLUTION_4X4
+                vl53l8cx_bus2_sensor.start_ranging()
+                _sensors[-1] = vl53l8cx_bus2_sensor
+                _sensor_types[-1] = 'VL53L8CX'
+                print("  - SUCCESS: VL53L8CX found on I2C bus 2 (assigned to channel -1).")
+                break
+            except Exception as e:
+                print(f"distance.py: ERROR during VL53L8CX initialisation: {e}")
+                traceback.print_exc()
+                time.sleep(0.2)
     # --- END NEW ---
 
     print("INFO: Sensor initialization complete.")
