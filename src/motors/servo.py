@@ -125,7 +125,7 @@ if __name__ == "__main__":
     else:
         try:
             while True:
-                set_angle(0)
+                set_angle(45)
                 # for angle in range(-90, 91, 1):
                 #     set_angle_unlimited(angle)
                 #     time.sleep(0.01)

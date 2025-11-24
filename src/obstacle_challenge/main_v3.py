@@ -34,8 +34,8 @@ USE_LAB = False
 HSV_RANGES = {
     'LOWER_RED_1': np.array([0, 100, 55]), 'UPPER_RED_1': np.array([5, 255, 255]),
     'LOWER_RED_2': np.array([174, 100, 55]), 'UPPER_RED_2': np.array([180, 255, 255]),
-    'LOWER_GREEN': np.array([40, 60, 40]), 'UPPER_GREEN': np.array([80, 255, 180]),
-    'LOWER_BLACK': np.array([0, 0, 0]), 'UPPER_BLACK': np.array([180, 255, 120]),
+    'LOWER_GREEN': np.array([40, 108, 40]), 'UPPER_GREEN': np.array([80, 255, 180]),
+    'LOWER_BLACK': np.array([0, 0, 0]), 'UPPER_BLACK': np.array([180, 95, 70]),
     'LOWER_ORANGE': np.array([6, 70, 20]), 'UPPER_ORANGE': np.array([26, 255, 255]),
     'LOWER_MAGENTA': np.array([158, 73, 64]), 'UPPER_MAGENTA': np.array([172, 255, 223]),
     'LOWER_BLUE': np.array([94, 45, 58]), 'UPPER_BLUE': np.array([140, 226, 185])
@@ -966,7 +966,7 @@ def parking():
                     print("Detected what seems to be the first magenta line.")
                     on_first_line = True
     servo.set_angle(1)
-    time.sleep(0.7)
+    time.sleep(0.9)
     motor.brake()
     motor.reverse(45)
     servo.set_angle_unlimited(55)
@@ -979,8 +979,8 @@ def parking():
     print('reverse')
     while True:
         dist = sensor_thread.get_readings()['distance_back']
-        print('Forward for parking back distance:', dist)
-        if dist is not None and dist < 200:
+        print('Reverse for parking back distance:', dist)
+        if dist is not None and dist < 170:
             break
         time.sleep(0.01)
     print('parking forward:',sensor_thread.get_readings())
@@ -991,7 +991,7 @@ def parking():
     while True:
         dist = sensor_thread.get_readings()['distance_back']
         if dist is not None:
-            if dist <= 75:
+            if dist <= 80:
                 break
         if get_angular_difference((INITIAL_HEADING+180)%360, imu_thread.get_heading()) < 2:
             break
@@ -1012,7 +1012,7 @@ def parking():
         dist = sensor_thread.get_readings()['distance_back']
         servo.set_angle(-steer_with_gyro(imu_thread.get_heading(),(INITIAL_HEADING+180)%360, kp=1.5))
         if dist is not None:
-            if dist <= 45:
+            if dist <= 65:
                 break
         if get_angular_difference((INITIAL_HEADING+180)%360, imu_thread.get_heading()) < 2:
             break
@@ -1132,13 +1132,13 @@ def parking2():
             pass
     motor.brake()
     print('parking first reverse turn:',sensor_thread.get_readings())
-    motor.forward(40)
+    motor.reverse(40)
     servo.set_angle(0)
     print('reverse')
     while True:
         dist = sensor_thread.get_readings()['distance_back']
-        print('Forward for parking back distance:', dist)
-        if dist is not None and dist > 200:
+        print('Reverse for parking back distance:', dist)
+        if dist is not None and dist < 180:
             break
         time.sleep(0.01)
     print('parking forward:',sensor_thread.get_readings())
@@ -1349,7 +1349,7 @@ if __name__ == "__main__":
                     
                     elif block_color == 'green':
                         wall_inner_left_size = sum(obj['area'] for obj in detected_walls if obj['type'] == 'wall_inner_left')
-                        target = 200 if block_y > 170 and 240 < block_x < 400 else 150
+                        target = 300 if block_y > 160 and 240 < block_x < 400 else 150
                         if detections['detected_magenta'] and driving_direction == 'clockwise' and abs(detections['detected_magenta'][0]['target_y']-block_y)<70:
                             target_x = detections['detected_magenta'][0]['target_x']
                             midpoint_x = (block_x + target_x) // 2
