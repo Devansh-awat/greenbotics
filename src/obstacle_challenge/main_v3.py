@@ -12,11 +12,14 @@ import sys
 import traceback
 from datetime import datetime
 
-#MOTOR_SPEED = 92
-#ORANGE_COOLDOWN_FRAMES = 80
+# MOTOR_SPEED = 88
+# ORANGE_COOLDOWN_FRAMES = 45
 
 MOTOR_SPEED = 85
-ORANGE_COOLDOWN_FRAMES = 40
+ORANGE_COOLDOWN_FRAMES = 50
+
+#MOTOR_SPEED = 92
+#ORANGE_COOLDOWN_FRAMES = 45
 
 ORANGE_DETECTION_HISTORY_LENGTH = 4
 
@@ -30,11 +33,11 @@ USE_LAB = False
 
 HSV_RANGES = {
     'LOWER_RED_1': np.array([0, 100, 55]), 'UPPER_RED_1': np.array([5, 255, 255]),
-    'LOWER_RED_2': np.array([176, 100, 55]), 'UPPER_RED_2': np.array([180, 255, 255]),
+    'LOWER_RED_2': np.array([174, 100, 55]), 'UPPER_RED_2': np.array([180, 255, 255]),
     'LOWER_GREEN': np.array([40, 60, 40]), 'UPPER_GREEN': np.array([80, 255, 180]),
     'LOWER_BLACK': np.array([0, 0, 0]), 'UPPER_BLACK': np.array([180, 255, 120]),
     'LOWER_ORANGE': np.array([6, 70, 20]), 'UPPER_ORANGE': np.array([26, 255, 255]),
-    'LOWER_MAGENTA': np.array([158, 73, 64]), 'UPPER_MAGENTA': np.array([173, 255, 223]),
+    'LOWER_MAGENTA': np.array([158, 73, 64]), 'UPPER_MAGENTA': np.array([172, 255, 223]),
     'LOWER_BLUE': np.array([94, 45, 58]), 'UPPER_BLUE': np.array([140, 226, 185])
 }
 
@@ -1121,7 +1124,7 @@ def parking2():
             print(e)
 
     servo.set_angle(1)
-    time.sleep(0.7)
+    time.sleep(0.75)
     motor.brake()
     motor.reverse(45)
     servo.set_angle_unlimited(-60)
@@ -1146,7 +1149,7 @@ def parking2():
     while True:
         dist = sensor_thread.get_readings()['distance_back']
         if dist is not None:
-            if dist <= 75:
+            if dist <= 80:
                 break
         if get_angular_difference((INITIAL_HEADING+180)%360, imu_thread.get_heading()) < 2:
             break
