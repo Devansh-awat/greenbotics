@@ -1,6 +1,7 @@
-![Greenbotics 2025](other/readmephotos/logo.png)
+| <img src="other/readmephotos/logo.png" alt="4" width="500" /> |
+| :----------------------------------------------------------: |
 
-| <img src="other/readmephotos/GithubQR.svg" alt="GithubQR" style="zoom:8%;" /> | <img src="other/readmephotos/YoutubeQR.svg" alt="YoutubeQR" style="zoom:8%;" /> |
+| <img src="other/readmephotos/GithubQR.svg" alt="GithubQR" width="200" align="left"/> | <img src="other/readmephotos/YoutubeQR.svg" alt="YoutubeQR" width="200" align="right" /> |
 | :----------------------------------------------------------- | -----------------------------------------------------------: |
 | Scan QR to open Github repo                                  |                                Scan QR to open YouTube video |
 
@@ -118,9 +119,9 @@ Having spent a lot of time working on LEGO-based hardware in the 2024 season, we
 
 # Robot Performance Video
 
-This video shows robot's construction, open challenge run as well as obstacle challenge run.
+This playlist consists of 3 videos that show our robot's construction, open challenge run as well as obstacle challenge run.
 
-| [<img src="other/readmephotos/VideoThumbnail.png" alt="Robot Video" width="300"/>](https://www.youtube.com/watch?v=yn76rDG4Hm4) | <img src="other/readmephotos/YoutubeQR.svg" alt="YoutubeQR" width="100" /> <br />Scan QR code to open in YouTube |
+| [<img src="other/readmephotos/VideoThumbnail.png" alt="Robot Video" width="300"/>](https://www.youtube.com/playlist?list=PLtGeYglcz-LV6koN9wQThOjIqPL0-ONzv) | <img src="other/readmephotos/YoutubeQR.svg" alt="YoutubeQR" width="100" /> <br />Scan QR code to open in YouTube |
 | ------------------------------------------------------------ | ------------------------------------------------------------ |
 
 
@@ -648,9 +649,10 @@ All four of our distance sensors share the same I²C address. Our CJMCU TCA9548A
     </td>
   </tr>
 </table>
+
 ## Bringing it all together
 
-<img src="other/readmephotos/FullCircuit3.jpg" alt="Robot Circuit" style="zoom:30%;" />
+<img src="other/readmephotos/FullCircuit3.jpg" alt="Robot Circuit" width="600" />
 
 <p style="page-break-before: always;"></p>
 
