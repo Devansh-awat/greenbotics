@@ -120,7 +120,7 @@ Having spent a lot of time working on LEGO-based hardware in the 2024 season, we
 
 This video shows robot's construction, open challenge run as well as obstacle challenge run.
 
-| [<img src="other/readmephotos/VideoThumbnail.png" alt="Robot Video" style="zoom:40%;"/>](https://www.youtube.com/watch?v=yn76rDG4Hm4) | <img src="other/readmephotos/YoutubeQR.svg" alt="YoutubeQR" style="zoom:10%;" /> <br />Scan QR code to open in YouTube |
+| [<img src="other/readmephotos/VideoThumbnail.png" alt="Robot Video" width="300"/>](https://www.youtube.com/watch?v=yn76rDG4Hm4) | <img src="other/readmephotos/YoutubeQR.svg" alt="YoutubeQR" width="100" /> <br />Scan QR code to open in YouTube |
 | ------------------------------------------------------------ | ------------------------------------------------------------ |
 
 
@@ -864,7 +864,7 @@ Navigate 3 laps using camera-based wall detection steering straight in the strai
 
 ### Flowchart
 
-<img src="other/flowchart/open_challenge.png" alt="open_challenge.png" style="zoom:25%;" />
+<img src="other/flowchart/open_challenge.png" alt="open_challenge.png" width="400" />
 
 ### Steering
 
@@ -942,7 +942,7 @@ Navigate 3 laps while avoiding colored blocks. Drive left of the green block and
 
 ### Flowchart
 
-<img src="other/flowchart/obstacle_challenge.png" alt="obstacle_challenge" style="zoom:25%;" />
+<img src="other/flowchart/obstacle_challenge.png" alt="obstacle_challenge" width="700" />
 
 ### Driving Direction Detection
 
@@ -976,7 +976,7 @@ This is the logic for counter clockwise. The logic for clockwise would be mirror
 
 #### Flowchart
 
-<img src="other/flowchart/initial_maneuver.png" alt="initial_maneuver" style="zoom:33%;" />
+<img src="other/flowchart/initial_maneuver.png" alt="initial_maneuver" width="700" />
 
 #### Code
 
@@ -1077,7 +1077,7 @@ Detect colored blocks (red and green) and execute appropriate maneuvers to avoid
 
 #### Flowchart
 
-<img src="other/flowchart/block_avoidance.png" alt="block_avoidance" style="zoom:33%;" />
+<img src="other/flowchart/block_avoidance.png" alt="block_avoidance" width="700" />
 
 #### Code
 
@@ -1126,7 +1126,7 @@ Execute parallel parking maneuver in two directions (clockwise and counter-clock
 
 #### Sketch
 
-<img src="other/flowchart/parking.jpeg" alt="parking" style="zoom:33%;" />
+<img src="other/flowchart/parking.jpeg" alt="parking" width="500" />
 
 
 
@@ -1185,43 +1185,43 @@ We started building the robot in mid of January 2025 and here is a timeline of o
 
 2. First prototype of motor attachment with vertical orientation secured by zip ties
 
-   | <img src="other/evolutionphotos/2.jpg" alt="2" style="zoom: 10%;" /> |
+   | <img src="other/evolutionphotos/2.jpg" alt="2" width="500" /> |
    | :----------------------------------------------------------: |
 
    <p style="page-break-before: always;"></p>
 
 3. 3D printed assembly to attach servo motor to steering
 
-   | <img src="other/evolutionphotos/3.jpeg" alt="3" style="zoom:15%;" /> |
+   | <img src="other/evolutionphotos/3.jpeg" alt="3" width="500" /> |
    | :----------------------------------------------------------: |
 
 4. Mounted Raspberry Pi5 on a cardboad sheet, battery, power converter, axle motor, motor driver and servo motor for steering
 
-   | <img src="other/evolutionphotos/4.jpg" alt="4" style="zoom:10%;" /> |
+   | <img src="other/evolutionphotos/4.jpg" alt="4" width="500" /> |
    | :----------------------------------------------------------: |
 
    <p style="page-break-before: always;"></p>
 
 5. Adding a camera so that our robot can see!
 
-   | <img src="other/evolutionphotos/5.jpg" alt="5" style="zoom:10%;" /> |
+   | <img src="other/evolutionphotos/5.jpg" alt="5" width="500" /> |
    | :----------------------------------------------------------: |
 
 6. Moving the components to a lego base plate to make it more stable
 
-   | <img src="other/evolutionphotos/6.jpg" alt="6" style="zoom:15%;" width="1800" /> |
+   | <img src="other/evolutionphotos/6.jpg" alt="6" style="zoom:15%;" width="500" /> |
    | :----------------------------------------------------------: |
 
    <p style="page-break-before: always;"></p>
 
 7. Attaching the lego base plate to the robot chassis along with distance sensors
 
-   | <img src="other/evolutionphotos/7.jpg" alt="7" style="zoom:15%;" width="1800"/> |
+   | <img src="other/evolutionphotos/7.jpg" alt="7" style="zoom:15%;" width="500"/> |
    | :----------------------------------------------------------: |
 
 8. All components connected with wires and bread board power rail for electrical prototyping
 
-   | <img src="other/evolutionphotos/8.jpg" alt="8" style="zoom:15%;" width="1800"/> |
+   | <img src="other/evolutionphotos/8.jpg" alt="8" style="zoom:15%;" width="500"/> |
    | :----------------------------------------------------------: |
 
    <p style="page-break-before: always;"></p>
@@ -1233,7 +1233,7 @@ We started building the robot in mid of January 2025 and here is a timeline of o
 
 10. Tied the wires neatly and upgraded the sensors
 
-    | <img src="other/evolutionphotos/10.jpg" alt="10" style="zoom:15%;" /> |      |
+    | <img src="other/evolutionphotos/10.jpg" alt="10" width="500" /> |      |
     | :----------------------------------------------------------: | ---- |
 
     <p style="page-break-before: always;"></p>
@@ -1253,7 +1253,7 @@ We started building the robot in mid of January 2025 and here is a timeline of o
 
 13. Aligned the battery so that it doesn't protrude outside the robot
 
-    | <img src="other/evolutionphotos/13.jpg" alt="13" style="zoom:20%;" /> |
+    | <img src="other/evolutionphotos/13.jpg" alt="13" width="500" /> |
     | :----------------------------------------------------------: |
 
 
@@ -1299,7 +1299,7 @@ We started building the robot in mid of January 2025 and here is a timeline of o
 - Attach the Camera arm mount to the base mount using screws
 - Use zip ties if necessary
 
-<img src="other/readmephotos/ChassisWith3dMount.jpg" alt="ChassisWith3dMount" style="zoom:15%;" />
+<img src="other/readmephotos/ChassisWith3dMount.jpg" alt="ChassisWith3dMount" width="600" />
 
 ## 4: Fabricate the PCB
 - Fabricate the PCB from the KiCAD files in the `models/PCB` folder using KiCAD (https://www.kicad.org/)
@@ -1313,7 +1313,7 @@ We started building the robot in mid of January 2025 and here is a timeline of o
 - Attach the IMU module to the header pins and verify if orientation values can be read using a test program
 - Attach the Raspberry Pi5 wide angle camera
 
-<img src="other/readmephotos/FullCircuit3.jpg" alt="FullCircuit3" style="zoom:20%;" />
+<img src="other/readmephotos/FullCircuit3.jpg" alt="FullCircuit3" width="600" />
 
 ## 6: Download the code
 - Connect the Raspberry Pi5 to a monitor, keyboard and mouse
