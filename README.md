@@ -10,7 +10,48 @@
 
 Welcome to the Greenbotics 2025 repository! This repository contains everything we've worked on over the past ten months, including all our code and resources. You can also use this repository as a complete guide to understand and reconstruct the robot from the ground up.
 
-[TOC]
+## Table of Contents
+
+- [The Team](#the-team)
+- [The Challenge](#the-challenge)
+  - [Our Vision](#our-vision)
+  - [Skills We Learned](#skills-we-learned)
+- [Photos of our Robot](#photos-of-our-robot)
+- [Robot Performance Video](#robot-performance-video)
+- [Mobility Management](#mobility-management)
+  - [Powertrain](#powertrain)
+  - [Steering System](#steering-system)
+  - [Chassis](#chassis)
+  - [Code for mobility components](#code-for-mobility-components)
+- [Power and Sense Management](#power-and-sense-management)
+  - [LiPo battery](#lipo-battery)
+  - [Raspberry Pi](#raspberry-pi)
+  - [Voltage Converter](#voltage-converter)
+  - [Printed Circuit Board (PCB)](#printed-circuit-board-pcb)
+  - [Camera](#camera)
+  - [IMU](#imu)
+  - [Distance Sensor](#distance-sensor)
+  - [Multiplexer](#multiplexer)
+  - [Code for sensors](#code-for-sensors)
+- [Obstacle Management](#obstacle-management)
+  - [Open Challenge Navigation Algorithm](#open-challenge-navigation-algorithm)
+    - [Potential improvements in Open Navigation Algorithm](#potential-improvements-in-open-navigation-algorithm)
+  - [Obstacle Challenge Navigation Algorithm](#obstacle-challenge-navigation-algorithm)
+    - [Potential improvements in Obstacle Navigation Algorithm](#potential-improvements-in-obstacle-navigation-algorithm)
+- [Engineering Factors](#engineering-factors)
+  - [Design evolution](#design-evolution)
+  - [From Nationals to Internationals!](#from-nationals-to-internationals)
+- [Robot construction guide](#robot-construction-guide)
+  - [1: Print the 3D parts](#1-print-the-3d-parts)
+  - [2: Assemble the steering and drive train](#2-assemble-the-steering-and-drive-train)
+  - [3: Attach the 3D mounts](#3-attach-the-3d-mounts)
+  - [4: Fabricate the PCB](#4-fabricate-the-pcb)
+  - [5: Soldering the electronics and gradual safe startup](#5-soldering-the-electronics-and-gradual-safe-startup)
+  - [6: Download the code](#6-download-the-code)
+  - [7: Robot stability](#7-robot-stability)
+- [Major challenges faced](#major-challenges-faced)
+- [How we used Github](#how-we-used-github)
+- [Bill of Materials](#bill-of-materials)
 
 # The Team
 
